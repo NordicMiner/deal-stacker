@@ -1,0 +1,140 @@
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --text: #1c1f1d;
+  --muted: #666d69;
+  --line: #e4e2dc;
+  --accent: #1f7a4d;
+  --accent-soft: #e3f1e9;
+  --save: #b3261e;
+  --gold: #a86b00;
+  --gold-soft: #fbefd6;
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121412;
+    --surface: #1c1f1d;
+    --text: #eceee9;
+    --muted: #9ea59f;
+    --line: #2d312e;
+    --accent: #52c089;
+    --accent-soft: #1b3326;
+    --save: #ff8a80;
+    --gold: #f2bd55;
+    --gold-soft: #3a2f16;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121412; --surface: #1c1f1d; --text: #eceee9; --muted: #9ea59f; --line: #2d312e;
+  --accent: #52c089; --accent-soft: #1b3326; --save: #ff8a80; --gold: #f2bd55; --gold-soft: #3a2f16;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+button, input { font: inherit; color: inherit; }
+img { display: block; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  background: #1f7a4d; color: #fff;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+}
+.topbar h1 { margin: 0; font-size: 1.25rem; }
+.subtitle { margin: 2px 0 0; font-size: .85rem; opacity: .85; }
+
+main { max-width: 640px; margin: 0 auto; padding: 12px 16px; }
+.muted { color: var(--muted); font-size: .9rem; margin: 4px 0 12px; }
+
+.controls { display: grid; gap: 10px; margin-bottom: 12px; }
+input[type="search"], input[type="password"], input[type="number"] {
+  width: 100%; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.chips { display: flex; gap: 8px; }
+.chip {
+  border: 1px solid var(--line); background: var(--surface);
+  border-radius: 999px; padding: 6px 14px; font-size: .9rem; cursor: pointer;
+}
+.chip.active { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+
+.cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.card {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 12px; cursor: pointer; width: 100%; text-align: left;
+}
+.card img, .thumb { width: 56px; height: 56px; object-fit: contain; border-radius: 8px; background: #fff; }
+.card .name { font-weight: 600; line-height: 1.25; }
+.card .sub { color: var(--muted); font-size: .85rem; margin-top: 2px; }
+.card .right { text-align: right; max-width: 96px; }
+.card .right .sub { font-size: .78rem; line-height: 1.2; }
+.big { font-size: 1.15rem; font-weight: 700; }
+.cash { color: var(--accent); font-weight: 700; }
+.badge {
+  display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 999px; background: var(--gold-soft); color: var(--gold);
+}
+.badge.green { background: var(--accent-soft); color: var(--accent); }
+
+.back { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 4px 0 10px; cursor: pointer; }
+.detail-head { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; margin-bottom: 12px; }
+.detail-head img { width: 72px; height: 72px; object-fit: contain; border-radius: 10px; background: #fff; }
+.detail-head h2 { margin: 0; font-size: 1.2rem; }
+
+.rank { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.rank.best { border: 2px solid var(--accent); }
+.rank-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.rank-store { font-weight: 700; }
+.rank-item { color: var(--muted); font-size: .85rem; margin: 2px 0 8px; }
+.stack { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.stack td { padding: 3px 0; }
+.stack td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stack .minus { color: var(--save); }
+.stack .later { color: var(--muted); font-size: .8rem; display: block; }
+.stack .total td { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 700; }
+.note { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+.panel h2 { margin: 0; font-size: 1.05rem; }
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.toggles label { display: flex; gap: 8px; align-items: center; font-size: .92rem; }
+.rates { display: grid; gap: 8px; }
+.rates label { display: grid; grid-template-columns: 1fr 110px; align-items: center; gap: 8px; }
+
+.button {
+  display: inline-block; border: 1px solid var(--line); background: var(--surface);
+  border-radius: 10px; padding: 10px 16px; font-weight: 600; cursor: pointer; text-align: center;
+}
+.button.primary { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+.button.small { padding: 6px 10px; font-size: .85rem; }
+.file input { display: none; }
+.status { font-size: .9rem; margin: 10px 0 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.links a { color: var(--accent); font-size: .9rem; }
+.empty { text-align: center; color: var(--muted); padding: 32px 8px; }
+
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tabbar button {
+  border: 0; background: none; padding: 8px 0 10px; display: grid; justify-items: center;
+  gap: 2px; font-size: .75rem; color: var(--muted); cursor: pointer;
+}
+.tabbar button span { font-size: 1.25rem; }
+.tabbar button.active { color: var(--accent); font-weight: 700; }
+a.button { color: var(--accent); text-decoration: none; }

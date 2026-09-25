@@ -1,0 +1,26 @@
+{
+  "postal_code": "T8N3K8",
+  "stores": [
+    "Walmart",
+    "Real Canadian Superstore",
+    "No Frills",
+    "Save-On-Foods",
+    "Safeway",
+    "Sobeys",
+    "Costco",
+    "Shoppers Drug Mart",
+    "T&T Supermarket",
+    "Giant Tiger",
+    "IGA",
+    "FreshCo",
+    "Your Independent Grocer",
+    "Loblaws",
+    "London Drugs",
+    "Rexall"
+  ],
+  "loyalty_programs": {
+    "PC Optimum": ["Real Canadian Superstore", "No Frills", "Shoppers Drug Mart", "Your Independent Grocer", "Loblaws", "Wholesale Club and Club Entrepôt"],
+    "Scene+": ["Safeway", "Sobeys", "IGA", "FreshCo", "Thrifty Foods"],
+    "More Rewards": ["Save-On-Foods"]
+  }
+}

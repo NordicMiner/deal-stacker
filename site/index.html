@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Deal Stacker</title>
+  <meta name="description" content="Checkout 51 offers stacked with St. Albert flyer prices and loyalty points.">
+  <meta name="theme-color" content="#1f7a4d">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Deal Stacker</h1>
+    <p class="subtitle" id="scan-info">Loading this week's deals…</p>
+  </header>
+
+  <main>
+    <!-- Deals -->
+    <section id="view-deals" class="view">
+      <div class="controls">
+        <input id="search" type="search" placeholder="Search offers" autocomplete="off">
+        <div class="chips" role="tablist">
+          <button class="chip active" data-filter="sale">On sale nearby</button>
+          <button class="chip" data-filter="all">All offers</button>
+        </div>
+      </div>
+      <ul id="deal-list" class="cards"></ul>
+    </section>
+
+    <!-- Deal detail -->
+    <section id="view-detail" class="view" hidden>
+      <button class="back" data-back>‹ Back</button>
+      <div id="detail"></div>
+    </section>
+
+    <!-- My offers -->
+    <section id="view-mine" class="view" hidden>
+      <div class="panel">
+        <h2>My loyalty offers</h2>
+        <p class="muted">Only for offers loaded to your own card. Screenshot the offers page in the PC Optimum or Scene+ app (one set covers every Superstore, No Frills, Independent, Shoppers, etc.) and add them here. Flyer points offers are already included automatically.</p>
+        <label class="button primary file">
+          <input id="shots" type="file" accept="image/*" multiple>
+          Add screenshots
+        </label>
+        <p id="shot-status" class="status" role="status"></p>
+      </div>
+      <ul id="mine-list" class="cards"></ul>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view" hidden>
+      <div class="panel">
+        <h2>Stores</h2>
+        <p class="muted">Only these stores are shown in rankings.</p>
+        <div id="store-toggles" class="toggles"></div>
+      </div>
+      <div class="panel">
+        <h2>Points value</h2>
+        <p class="muted">Dollars per 1,000 points.</p>
+        <div id="rate-inputs" class="rates"></div>
+      </div>
+      <div class="panel">
+        <h2>Claude API key</h2>
+        <p class="muted">Needed only to read screenshots. It stays on this phone.</p>
+        <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off">
+      </div>
+      <div class="panel">
+        <h2>Data</h2>
+        <p id="data-info" class="muted"></p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-tab="deals" class="active"><span aria-hidden="true">🏷️</span>Deals</button>
+    <button data-tab="mine"><span aria-hidden="true">⭐</span>My offers</button>
+    <button data-tab="settings"><span aria-hidden="true">⚙️</span>Settings</button>
+  </nav>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
