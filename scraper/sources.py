@@ -68,14 +68,31 @@ def term_key(text: str) -> str:
 
 
 def relevant(query: str, name: str) -> bool:
-    q = tokens(re.sub(r"\(.*?\)", "", query))
+    query = re.sub(r"\(.*?\)", "", query)
+    q = tokens(query)
     if not q:
         return False
     hay = set(tokens(name))
     has = lambda t: t in hay or t.rstrip("s") in hay or t + "s" in hay
-    if not has(q[0]):
+    brand = q[0]
+    if not has(brand):
         return False  # first word is usually the brand; require it
-    return sum(1 for t in q if has(t)) / len(q) >= 0.7
+    if sum(1 for t in q if has(t)) / len(q) >= 0.7:
+        return True
+    # Offers often name several products: "TENA Men Shields, Guards or Underwear".
+    # Any one option can match. A bare one-word option ("Underwear") also needs a
+    # word from the options before it ("Men"), so plain TENA underwear doesn't count.
+    parts = [tokens(p) for p in re.split(r",|/|&|\bor\b", query, flags=re.I)]
+    parts = [[t for t in p if t != brand] for p in parts if p]
+    if len(parts) < 2:
+        return False
+    seen: list[str] = []
+    for part in parts:
+        if part and sum(1 for t in part if has(t)) / len(part) >= 0.7:
+            if len(part) > 1 or not seen or any(has(t) for t in seen):
+                return True
+        seen.extend(part)
+    return False
 
 
 def clean_query(text: str) -> str:
@@ -180,7 +197,7 @@ def parse_flyer_item(config: dict, item: dict) -> dict | None:
     }
 
 
-def flyer_matches(config: dict, query: str) -> list[dict]:
+def flyer_matches(config: dict, query: str, wanted: frozenset = frozenset()) -> list[dict]:
     q = clean_query(query)
     url = FLIPP_SEARCH.format(postal=config["postal_code"], q=urllib.parse.quote(q))
     try:
@@ -196,7 +213,7 @@ def flyer_matches(config: dict, query: str) -> list[dict]:
         if not relevant(q, f"{raw.get('name', '')} {raw.get('brand') or ''}"):
             continue
         item = parse_flyer_item(config, raw)
-        if not item:
+        if not item or not size_ok(wanted, item["name"]):
             continue
         key = (item["merchant"], item["name"].lower())
         if key not in best or (item["price"] or 1e9) < (best[key]["price"] or 1e9):
@@ -302,8 +319,8 @@ def _saveon_search(store: dict, query: str) -> list[dict]:
 SHELF_SOURCES = {"pcx": _pcx_search, "saveon": _saveon_search}
 
 
-def shelf_matches(config: dict, query: str, failures: dict) -> list[dict]:
-    """Regular store prices, up to two relevant items per store."""
+def shelf_matches(config: dict, query: str, failures: dict, wanted: frozenset = frozenset()) -> list[dict]:
+    """Regular store prices, up to two relevant items of the wanted size per store."""
     q = clean_query(query)
     out = []
     for store in config.get("shelf_stores", []):
@@ -314,14 +331,16 @@ def shelf_matches(config: dict, query: str, failures: dict) -> list[dict]:
             if failures[store["merchant"]] <= 2:
                 print(f"  ! {store['merchant']} search failed for {q!r}: {e}", file=sys.stderr)
             continue
-        hits = [i for i in items if relevant(q, i["name"])]
+        hits = [i for i in items if relevant(q, i["name"]) and size_ok(wanted, i["name"])]
         out.extend(sorted(hits, key=lambda i: i["price"])[:2])
     return out
 
 
 # ---------- package sizes ----------
 
-SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(kg|g|ml|l|ct|count|pk|pack|pods?|pacs?|sheets?|ea|bars?|rolls?|capsules?|caplets?|tablets?)\b", re.I)
+UNITS = r"kg|g|ml|l|ct|count|pk|pack|pods?|pacs?|sheets?|ea|bars?|rolls?|capsules?|caplets?|tablets?"
+# "156 g", and lists that share a unit: "8 or 12 rolls", "665 mL or 828 mL"
+SIZE_RE = re.compile(rf"((?:\d+(?:\.\d+)?\s*(?:,|or|/)\s*)*\d+(?:\.\d+)?)\s*({UNITS})\b", re.I)
 UNIT_ALIASES = {"count": "ct", "pk": "ct", "pack": "ct", "pod": "ct", "pods": "ct", "pac": "ct", "pacs": "ct",
                 "ea": "ct", "bar": "ct", "bars": "ct", "roll": "ct", "rolls": "ct", "sheet": "sheets",
                 "capsule": "ct", "capsules": "ct", "caplet": "ct", "caplets": "ct", "tablet": "ct", "tablets": "ct"}
@@ -329,15 +348,27 @@ UNIT_ALIASES = {"count": "ct", "pk": "ct", "pack": "ct", "pod": "ct", "pods": "c
 
 def sizes(text: str) -> set[tuple[float, str]]:
     out = set()
-    for num, unit in SIZE_RE.findall(text or ""):
+    for nums, unit in SIZE_RE.findall(text or ""):
         unit = UNIT_ALIASES.get(unit.lower(), unit.lower())
-        value = float(num)
-        if unit == "kg":
-            value, unit = value * 1000, "g"
-        if unit == "l":
-            value, unit = value * 1000, "ml"
-        out.add((round(value, 1), unit))
+        for num in re.findall(r"\d+(?:\.\d+)?", nums):
+            value = float(num)
+            u = unit
+            if u == "kg":
+                value, u = value * 1000, "g"
+            if u == "l":
+                value, u = value * 1000, "ml"
+            out.add((round(value, 1), u))
     return out
+
+
+def offer_sizes(name: str, description: str) -> set[tuple[float, str]]:
+    """Sizes an offer is valid on, from its name and its "Valid on ..." sentences.
+
+    Ignores exclusions like "Excludes 5 count or lower trial packs".
+    """
+    valid = [s for s in re.split(r"(?<=\.)\s+", description or "")
+             if s.lower().startswith("valid on") and "exclud" not in s.lower()]
+    return sizes(name) | sizes(" ".join(valid))
 
 
 def size_ok(wanted: set, item_name: str) -> bool:

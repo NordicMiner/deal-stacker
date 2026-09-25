@@ -8,6 +8,7 @@ const DEFAULT_RATES = { "PC Optimum": 1, "Scene+": 10, "More Rewards": 1.5, "Be 
 const DEFAULT_STORES = [
   "Walmart", "Real Canadian Superstore", "No Frills", "Save-On-Foods", "Safeway",
   "Sobeys", "Costco", "Shoppers Drug Mart", "Your Independent Grocer",
+  "Pet Valu", "PetSmart", "Real Canadian Liquor Store", "Sobeys & Safeway Liquor",
 ];
 const STOPWORDS = new Set(["any", "or", "and", "the", "with", "of", "for", "products", "product",
   "variety", "varieties", "select", "ct", "pk", "pack", "buy", "get", "all", "size", "sizes",
@@ -32,6 +33,13 @@ function save(key, value) {
 }
 const settings = load("settings", { stores: DEFAULT_STORES, rates: DEFAULT_RATES, apiKey: "", githubToken: "" });
 settings.rates = { ...DEFAULT_RATES, ...settings.rates };
+// Switch on default stores added since this phone last saved its settings.
+settings.seenStores ??= [...settings.stores];
+for (const s of DEFAULT_STORES.filter((s) => !settings.seenStores.includes(s))) {
+  settings.seenStores.push(s);
+  if (!settings.stores.includes(s)) settings.stores.push(s);
+  save("settings", settings);
+}
 let myOffers = load("myOffers", []);
 let watchTerms = load("watchTerms", null); // null until first load from the server list
 let tripList = load("tripList", []); // [{kind: "offer"|"watch", key, done}]
@@ -51,13 +59,28 @@ function tokens(text) {
   return String(text).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[®™©]/g, "")
     .split(/[^a-z0-9&']+/).filter((t) => t.length >= 2 && !STOPWORDS.has(t) && !/^\d+$/.test(t));
 }
+// Same rules as relevant() in scraper/sources.py.
 function productMatches(product, itemName) {
+  product = String(product).replace(/\(.*?\)/g, "");
   const q = tokens(product);
   if (!q.length) return false;
   const hay = new Set(tokens(itemName));
   const has = (t) => hay.has(t) || hay.has(t.replace(/s$/, "")) || hay.has(t + "s");
-  if (!has(q[0])) return false; // first word is usually the brand
-  return q.filter(has).length / q.length >= 0.7;
+  const brand = q[0];
+  if (!has(brand)) return false; // first word is usually the brand
+  if (q.filter(has).length / q.length >= 0.7) return true;
+  // "TENA Men Shields, Guards or Underwear": any one option can match, but a
+  // one-word option also needs a word from the options before it.
+  const parts = product.split(/,|\/|&|\bor\b/i).map(tokens).filter((p) => p.length)
+    .map((p) => p.filter((t) => t !== brand));
+  if (parts.length < 2) return false;
+  const seen = [];
+  for (const part of parts) {
+    if (part.length && part.filter(has).length / part.length >= 0.7 &&
+        (part.length > 1 || !seen.length || seen.some(has))) return true;
+    seen.push(...part);
+  }
+  return false;
 }
 function programFor(merchant) {
   for (const [program, merchants] of Object.entries(data.loyaltyPrograms || {})) {
@@ -189,6 +212,7 @@ function rankHtml(m, s, isBest) {
   const notes = [
     m.source === "pricematch" ? `Show the ${esc(m.priceMatchFrom)} flyer at the till. It must be the same item and size.` : "",
     m.saleStory ? `${m.source === "flyer" ? "Flyer" : "Store"}: ${esc(m.saleStory)}` : "",
+    m.source === "shelf" && data.shelfStores?.[m.merchant] ? `Price from ${esc(data.shelfStores[m.merchant])}` : "",
     ends,
   ].filter(Boolean).map((n) => `<div class="note">${n}</div>`).join("");
   return `<li class="rank${isBest ? " best" : ""}">

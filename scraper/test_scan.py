@@ -17,8 +17,24 @@ class Matching(unittest.TestCase):
         self.assertTrue(sources.relevant("NESCAFÉ Espresso Concentrate", "Nescafe Espresso Coffee Concentrate 500 mL"))
         self.assertFalse(sources.relevant("Tide Pods", "Gain Flings pods"))
 
+    def test_relevant_multi_product_offers(self):
+        tena = "TENA Men Shields, Guards or Underwear"
+        self.assertTrue(sources.relevant(tena, "Tena MEN Protective Overnight Incontinence Guards"))
+        self.assertFalse(sources.relevant(tena, "Tena Ultimate Incontinence Underwear, Large"))
+        kotex = "Kotex Bamboo or BioCare Pads or Liners"
+        self.assertTrue(sources.relevant(kotex, "Kotex Bamboo Wrapped Liners, Light Absorbency"))
+        self.assertFalse(sources.relevant(kotex, "Kotex Daily Wrapped Liners, Light Absorbency"))
+        self.assertTrue(sources.relevant("Select Cascades Fluff & Tuff Products", "Cascades Fluff Bathroom Tissue, 24 ea"))
+        self.assertTrue(sources.relevant("St. Ives Body Wash, Hand & Body Lotion or Face Scrub", "St. Ives - Skin Renewing Body Lotion"))
+        self.assertFalse(sources.relevant("Select Cascades Fluff & Tuff Products", "Cascade Platinum Plus Dishwasher Pods"))
+
     def test_sizes_normalise_units(self):
         self.assertEqual(sources.sizes("1.5 L and 2 kg, 40 ea"), {(1500.0, "ml"), (2000.0, "g"), (40.0, "ct")})
+
+    def test_offer_sizes_reads_valid_on_lists_and_skips_exclusions(self):
+        self.assertEqual(sources.offer_sizes("Kotex Pads", "Any variety. Excludes 5 count or lower trial packs."), set())
+        self.assertEqual(sources.offer_sizes("Cascades", "Valid on 8 or 12 rolls bathroom tissues."), {(8.0, "ct"), (12.0, "ct")})
+        self.assertEqual(sources.offer_sizes("Friskies 156 g", "Any variety."), {(156.0, "g")})
 
     def test_size_ok_only_rejects_clear_mismatch(self):
         wanted = sources.sizes("Valid on 156 g.")

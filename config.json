@@ -16,7 +16,11 @@
     "Your Independent Grocer",
     "Loblaws",
     "London Drugs",
-    "Rexall"
+    "Rexall",
+    "Pet Valu",
+    "PetSmart",
+    "Real Canadian Liquor Store",
+    "Sobeys & Safeway Liquor"
   ],
   "loyalty_programs": {
     "PC Optimum": [
@@ -25,14 +29,16 @@
       "Shoppers Drug Mart",
       "Your Independent Grocer",
       "Loblaws",
-      "Wholesale Club and Club Entrepôt"
+      "Wholesale Club and Club Entrepôt",
+      "Real Canadian Liquor Store"
     ],
     "Scene+": [
       "Safeway",
       "Sobeys",
       "IGA",
       "FreshCo",
-      "Thrifty Foods"
+      "Thrifty Foods",
+      "Sobeys & Safeway Liquor"
     ],
     "More Rewards": [
       "Save-On-Foods"
@@ -44,18 +50,28 @@
       "merchant": "Real Canadian Superstore",
       "source": "pcx",
       "banner": "superstore",
-      "store_id": "1568"
+      "store_id": "1568",
+      "note": "Superstore, St. Albert Trail"
     },
     {
       "merchant": "Your Independent Grocer",
       "source": "pcx",
       "banner": "independent",
-      "store_id": "4035"
+      "store_id": "4035",
+      "note": "Mortada's Independent, St. Albert Trail"
     },
     {
       "merchant": "Save-On-Foods",
       "source": "saveon",
-      "store_id": "6665"
+      "store_id": "6665",
+      "note": "Save-On, Village Landing"
+    },
+    {
+      "merchant": "No Frills",
+      "source": "pcx",
+      "banner": "nofrills",
+      "store_id": "3649",
+      "note": "Chris' No Frills, 97 St NW Edmonton"
     }
   ],
   "price_match": {

@@ -48,8 +48,10 @@ def load_json(path: Path, fallback):
 shelf_failures: dict[str, int] = {}
 
 
-def search_everywhere(query: str) -> list[dict]:
-    matches = sources.flyer_matches(CONFIG, query) + sources.shelf_matches(CONFIG, query, shelf_failures)
+def search_everywhere(job: tuple[str, frozenset]) -> list[dict]:
+    query, wanted = job
+    matches = (sources.flyer_matches(CONFIG, query, wanted)
+               + sources.shelf_matches(CONFIG, query, shelf_failures, wanted))
     return sorted(matches, key=lambda m: m["price"] if m["price"] is not None else 1e9)
 
 
@@ -120,20 +122,20 @@ def main() -> None:
     watch_terms = [t.strip() for t in load_json(WATCHLIST, {"items": []}).get("items", []) if t.strip()]
     print(f"Checkout 51: {len(offers)} cashback offers; watchlist: {len(watch_terms)} items")
 
-    queries = [o["product"] for o in offers] + watch_terms
+    # Checkout 51 often names the eligible size ("Valid on 156 g"); search for that size.
+    jobs = [(o["product"], frozenset(sources.offer_sizes(o["name"], o["description"]))) for o in offers]
+    jobs += [(t, frozenset()) for t in watch_terms]
     with ThreadPoolExecutor(max_workers=6) as pool:
-        results = dict(zip(queries, pool.map(search_everywhere, queries)))
+        results = dict(zip(jobs, pool.map(search_everywhere, jobs)))
 
-    for o in offers:
-        # Checkout 51 often names the eligible size ("Valid on 156 g"); drop other sizes.
-        wanted = sources.sizes(f"{o['name']} {o['description']}")
-        o["matches"] = [m for m in results[o["product"]] if sources.size_ok(wanted, m["name"])]
+    for o, job in zip(offers, jobs):
+        o["matches"] = results[job]
         o["key"] = sources.term_key(o["product"])
         hist.record(history, o["key"], o["matches"], today)
         o["verdict"] = hist.verdict(history, o["key"], o["matches"], today)
     watch = []
     for term in watch_terms:
-        w = {"term": term, "key": sources.term_key(term), "matches": results[term]}
+        w = {"term": term, "key": sources.term_key(term), "matches": results[(term, frozenset())]}
         hist.record(history, w["key"], w["matches"], today)
         w["verdict"] = hist.verdict(history, w["key"], w["matches"], today)
         watch.append(w)
@@ -155,6 +157,7 @@ def main() -> None:
         "stores": CONFIG["stores"],
         "loyaltyPrograms": CONFIG["loyalty_programs"],
         "priceMatch": CONFIG.get("price_match", {}),
+        "shelfStores": {st["merchant"]: st.get("note", "") for st in CONFIG.get("shelf_stores", [])},
         "offers": offers,
         "watch": watch,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
