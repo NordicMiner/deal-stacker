@@ -209,3 +209,5 @@ a.button { color: var(--accent); text-decoration: none; }
 .limit .button.small { padding: 4px 12px; font-size: 1rem; }
 .qty { font-size: .75rem; font-weight: 700; color: var(--gold); background: var(--gold-soft); border-radius: 999px; padding: 2px 7px; vertical-align: middle; }
 .note.tip { color: var(--gold); }
+
+.linkish { border: 0; background: none; padding: 6px 0 0; color: var(--muted); font-size: .8rem; text-decoration: underline; cursor: pointer; }

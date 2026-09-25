@@ -48,10 +48,10 @@ def load_json(path: Path, fallback):
 shelf_failures: dict[str, int] = {}
 
 
-def search_everywhere(job: tuple[str, frozenset]) -> list[dict]:
-    query, wanted = job
-    matches = (sources.flyer_matches(CONFIG, query, wanted)
-               + sources.shelf_matches(CONFIG, query, shelf_failures, wanted))
+def search_everywhere(job: tuple[str, frozenset, bool]) -> list[dict]:
+    query, wanted, strict = job
+    matches = (sources.flyer_matches(CONFIG, query, wanted, strict)
+               + sources.shelf_matches(CONFIG, query, shelf_failures, wanted, strict))
     return sorted(matches, key=lambda m: m["price"] if m["price"] is not None else 1e9)
 
 
@@ -123,8 +123,8 @@ def main() -> None:
     print(f"Checkout 51: {len(offers)} cashback offers; watchlist: {len(watch_terms)} items")
 
     # Checkout 51 often names the eligible size ("Valid on 156 g"); search for that size.
-    jobs = [(o["product"], frozenset(sources.offer_sizes(o["name"], o["description"]))) for o in offers]
-    jobs += [(t, frozenset()) for t in watch_terms]
+    jobs = [(o["product"], frozenset(sources.offer_sizes(o["name"], o["description"])), False) for o in offers]
+    jobs += [(t, frozenset(), True) for t in watch_terms]  # watchlist words are often generic: be strict
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = dict(zip(jobs, pool.map(search_everywhere, jobs)))
 
@@ -135,7 +135,7 @@ def main() -> None:
         o["verdict"] = hist.verdict(history, o["key"], o["matches"], today)
     watch = []
     for term in watch_terms:
-        w = {"term": term, "key": sources.term_key(term), "matches": results[(term, frozenset())]}
+        w = {"term": term, "key": sources.term_key(term), "matches": results[(term, frozenset(), True)]}
         hist.record(history, w["key"], w["matches"], today)
         w["verdict"] = hist.verdict(history, w["key"], w["matches"], today)
         watch.append(w)

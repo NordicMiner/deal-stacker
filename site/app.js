@@ -59,12 +59,14 @@ function tokens(text) {
   return String(text).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[®™©]/g, "")
     .split(/[^a-z0-9&']+/).filter((t) => t.length >= 2 && !STOPWORDS.has(t) && !/^\d+$/.test(t));
 }
-// Same rules as relevant() in scraper/sources.py.
-function productMatches(product, itemName) {
+// Same rules and word list as relevant()/PROCESSED in scraper/sources.py.
+const PROCESSED = new Set(["baby", "bar", "bars", "cake", "candies", "candle", "candy", "carton", "cereal", "chips", "cocktail", "concentrate", "cookies", "crisps", "dressing", "dried", "drink", "drinks", "flavor", "flavored", "flavour", "flavoured", "freshener", "frozen", "gummies", "gummy", "jam", "jelly", "juice", "lemonade", "lotion", "muffin", "muffins", "oil", "pie", "popsicle", "popsicles", "pouch", "pouches", "punch", "puree", "refreshers", "sauce", "scent", "scented", "shampoo", "smoothie", "smoothies", "snack", "snacks", "soda", "sparkling", "spread", "syrup", "tea", "vinegar", "wash", "yoghurt", "yogurt"]);
+function productMatches(product, itemName, strict = false) {
   product = String(product).replace(/\(.*?\)/g, "");
   const q = tokens(product);
   if (!q.length) return false;
   const hay = new Set(tokens(itemName));
+  if (strict && q.length <= 2 && [...hay].some((t) => PROCESSED.has(t) && !q.includes(t))) return false;
   const has = (t) => hay.has(t) || hay.has(t.replace(/s$/, "")) || hay.has(t + "s");
   const brand = q[0];
   if (!has(brand)) return false; // first word is usually the brand
@@ -231,10 +233,14 @@ function priceMatchOptions(matches) {
 
 const isSale = (m) => m.source === "flyer" || m.source === "pricematch" || (m.wasPrice && m.price < m.wasPrice);
 
+let hidden = load("hidden", {}); // "kind|key" -> product names she said aren't it
+const hiddenFor = (item) => hidden[`${item.kind}|${item.key}`] || [];
+
 // Best option per store, cheapest first.
 function ranked(item) {
   const known = new Set([...(data.stores || []), ...DEFAULT_STORES]);
-  const mine = [...item.matches, ...priceBookMatches(item)].filter((m) => settings.stores.includes(m.merchant) ||
+  const skip = new Set(hiddenFor(item));
+  const mine = [...item.matches, ...priceBookMatches(item)].filter((m) => !skip.has(m.name.toLowerCase())).filter((m) => settings.stores.includes(m.merchant) ||
     (m.source === "pricebook" && !known.has(m.merchant)));
   const all = [...mine, ...priceMatchOptions(item.matches)].map((m) => ({ m, s: stack(m, item.c51) }));
   const best = new Map();
@@ -264,7 +270,7 @@ function verdictHtml(v) {
   return "";
 }
 
-function rankHtml(m, s, isBest) {
+function rankHtml(m, s, isBest, hideKey) {
   let priceLabel = "Flyer price";
   if (m.source === "shelf") priceLabel = m.wasPrice && m.wasPrice > m.price ? `Sale price (reg. ${money(m.wasPrice)})` : "Shelf price";
   if (m.source === "pricematch") priceLabel = `Price match (${short(m.priceMatchFrom)} flyer)`;
@@ -297,6 +303,7 @@ function rankHtml(m, s, isBest) {
     ${altNotes.map((n) => `<div class="note tip">💡 ${n}</div>`).join("")}
     ${notes}
     ${m.link ? `<div class="note"><a href="${esc(m.link)}" target="_blank" rel="noopener">View at store ↗</a></div>` : ""}
+    ${hideKey && m.source !== "pricematch" ? `<button class="linkish" data-hide="${esc(hideKey)}" data-name="${esc(m.name.toLowerCase())}">Not this product ✕</button>` : ""}
   </li>`;
 }
 
@@ -390,8 +397,9 @@ function showDetail(kind, key) {
     </div>
     ${verdictHtml(item.verdict)}
     <ul class="cards">${rows.length
-      ? rows.map((r, i) => rankHtml(r.m, r.s, i === 0 && r.s.final != null)).join("")
+      ? rows.map((r, i) => rankHtml(r.m, r.s, i === 0 && r.s.final != null, `${kind}|${key}`)).join("")
       : `<li class="empty">${item.pending ? "Full prices arrive after the next scan." : "No local price found this week."}${item.c51 ? ` It still pays ${cashText(item.c51)} back at any store.` : ""}</li>`}</ul>
+    ${hiddenFor(item).length ? `<button class="linkish" data-unhide="${esc(kind)}|${esc(key)}">Show ${hiddenFor(item).length} hidden product${hiddenFor(item).length > 1 ? "s" : ""} again</button>` : ""}
     ${shopLinks(item.product)}
     <form class="panel add-price" data-add-price="${esc(item.product)}">
       <h2>Saw a price?</h2>
@@ -460,7 +468,7 @@ async function liveSearch(term) {
   const url = `${FLIPP_SEARCH}&postal_code=${encodeURIComponent(data.postalCode || "T8N3K8")}&q=${encodeURIComponent(term)}`;
   const json = await (await fetch(url)).json();
   return (json.items || [])
-    .filter((i) => productMatches(term, `${i.name} ${i.brand || ""}`))
+    .filter((i) => productMatches(term, `${i.name} ${i.brand || ""}`, true))
     .map(parseFlippItem).filter(Boolean);
 }
 
@@ -1042,7 +1050,7 @@ function priceBookMatches(item) {
   const wanted = item.c51 ? offerSizes(item.c51.name, item.c51.description) : [];
   const latest = new Map();
   for (const e of priceBook) {
-    if (live.has(e.store) || e.perWeight || !productMatches(item.product, e.name) || !sizeOk(wanted, e.name)) continue;
+    if (live.has(e.store) || e.perWeight || !productMatches(item.product, e.name, item.kind === "watch") || !sizeOk(wanted, e.name)) continue;
     const cur = latest.get(e.store);
     if (!cur || e.date > cur.date) latest.set(e.store, e);
   }
@@ -1250,6 +1258,21 @@ function wire() {
     if (cash) {
       c51Cash[cash.dataset.offerId] = +cash.dataset.cash;
       save("c51Cash", c51Cash);
+      routeResult = null;
+      route();
+    }
+    const hide = e.target.closest("[data-hide]");
+    if (hide) {
+      const list = hidden[hide.dataset.hide] ||= [];
+      if (!list.includes(hide.dataset.name)) list.push(hide.dataset.name);
+      save("hidden", hidden);
+      routeResult = null;
+      route();
+    }
+    const unhide = e.target.closest("[data-unhide]");
+    if (unhide) {
+      delete hidden[unhide.dataset.unhide];
+      save("hidden", hidden);
       routeResult = null;
       route();
     }

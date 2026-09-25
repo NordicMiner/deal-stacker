@@ -67,12 +67,19 @@ def term_key(text: str) -> str:
     return " ".join(tokens(re.sub(r"\(.*?\)", "", text)))
 
 
-def relevant(query: str, name: str) -> bool:
+# Words that turn a fresh product into a different one ("Watermelon" -> watermelon juice).
+PROCESSED = frozenset({'pie', 'dried', 'punch', 'cookies', 'sparkling', 'gummy', 'muffins', 'jam', 'scented', 'flavor', 'pouches', 'snacks', 'yogurt', 'oil', 'chips', 'soda', 'scent', 'concentrate', 'yoghurt', 'jelly', 'crisps', 'flavored', 'juice', 'bars', 'flavour', 'cake', 'drink', 'dressing', 'popsicle', 'puree', 'lotion', 'bar', 'smoothie', 'cocktail', 'candle', 'refreshers', 'popsicles', 'tea', 'wash', 'spread', 'shampoo', 'frozen', 'pouch', 'gummies', 'sauce', 'baby', 'carton', 'syrup', 'drinks', 'smoothies', 'vinegar', 'flavoured', 'muffin', 'lemonade', 'freshener', 'candy', 'snack', 'cereal', 'candies'})
+
+
+def relevant(query: str, name: str, strict: bool = False) -> bool:
     query = re.sub(r"\(.*?\)", "", query)
     q = tokens(query)
     if not q:
         return False
     hay = set(tokens(name))
+    # Short watchlist searches like "Strawberries" mean the thing itself, not frozen or juice versions.
+    if strict and len(q) <= 2 and (hay & PROCESSED) - set(q):
+        return False
     has = lambda t: t in hay or t.rstrip("s") in hay or t + "s" in hay
     brand = q[0]
     if not has(brand):
@@ -207,7 +214,7 @@ def parse_flyer_item(config: dict, item: dict) -> dict | None:
     }
 
 
-def flyer_matches(config: dict, query: str, wanted: frozenset = frozenset()) -> list[dict]:
+def flyer_matches(config: dict, query: str, wanted: frozenset = frozenset(), strict: bool = False) -> list[dict]:
     q = clean_query(query)
     url = FLIPP_SEARCH.format(postal=config["postal_code"], q=urllib.parse.quote(q))
     try:
@@ -220,7 +227,7 @@ def flyer_matches(config: dict, query: str, wanted: frozenset = frozenset()) -> 
     for raw in data.get("items", []):
         if raw.get("merchant_name") not in stores:
             continue
-        if not relevant(q, f"{raw.get('name', '')} {raw.get('brand') or ''}"):
+        if not relevant(q, f"{raw.get('name', '')} {raw.get('brand') or ''}", strict):
             continue
         item = parse_flyer_item(config, raw)
         if not item or not size_ok(wanted, item["name"]):
@@ -332,7 +339,8 @@ def _saveon_search(store: dict, query: str) -> list[dict]:
 SHELF_SOURCES = {"pcx": _pcx_search, "saveon": _saveon_search}
 
 
-def shelf_matches(config: dict, query: str, failures: dict, wanted: frozenset = frozenset()) -> list[dict]:
+def shelf_matches(config: dict, query: str, failures: dict, wanted: frozenset = frozenset(),
+                  strict: bool = False) -> list[dict]:
     """Regular store prices, up to two relevant items of the wanted size per store."""
     q = clean_query(query)
     out = []
@@ -344,7 +352,7 @@ def shelf_matches(config: dict, query: str, failures: dict, wanted: frozenset = 
             if failures[store["merchant"]] <= 2:
                 print(f"  ! {store['merchant']} search failed for {q!r}: {e}", file=sys.stderr)
             continue
-        hits = [i for i in items if relevant(q, i["name"]) and size_ok(wanted, i["name"])]
+        hits = [i for i in items if relevant(q, i["name"], strict) and size_ok(wanted, i["name"])]
         out.extend(sorted(hits, key=lambda i: i["price"])[:2])
     return out
 

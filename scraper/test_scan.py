@@ -28,6 +28,15 @@ class Matching(unittest.TestCase):
         self.assertTrue(sources.relevant("St. Ives Body Wash, Hand & Body Lotion or Face Scrub", "St. Ives - Skin Renewing Body Lotion"))
         self.assertFalse(sources.relevant("Select Cascades Fluff & Tuff Products", "Cascade Platinum Plus Dishwasher Pods"))
 
+    def test_short_watch_searches_skip_processed_versions(self):
+        self.assertFalse(sources.relevant("Watermelon", "Minute Maid Watermelon Carton, 1.75 L", strict=True))
+        self.assertFalse(sources.relevant("Strawberries", "No Name Frozen Sliced Strawberries, 600 g", strict=True))
+        self.assertTrue(sources.relevant("Strawberries", "Strawberries, 1 lb", strict=True))
+        self.assertTrue(sources.relevant("Frozen strawberries", "No Name Frozen Sliced Strawberries, 600 g", strict=True))
+        self.assertTrue(sources.relevant("Butter", "Great Value Salted Butter", strict=True))
+        # Checkout 51 offers aren't strict: "Select Suave Products" covers shampoo.
+        self.assertTrue(sources.relevant("Select Suave Products", "Suave Professionals Shampoo, 828 mL"))
+
     def test_points_terms(self):
         self.assertEqual(sources.points_terms("Get 5000 PC Optimum bonus points for every $24.97 spent on participating products"),
                          {"pointsBuy": 1, "pointsSpend": 24.97, "pointsRepeat": True})
