@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Deal Stacker</title>
-  <meta name="description" content="Checkout 51 offers stacked with St. Albert flyer prices and loyalty points.">
+  <meta name="description" content="Checkout 51 offers stacked with St. Albert store prices and loyalty points.">
   <meta name="theme-color" content="#1f7a4d">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -30,10 +30,29 @@
       <ul id="deal-list" class="cards"></ul>
     </section>
 
-    <!-- Deal detail -->
+    <!-- Detail -->
     <section id="view-detail" class="view" hidden>
       <button class="back" data-back>‹ Back</button>
       <div id="detail"></div>
+    </section>
+
+    <!-- Watchlist -->
+    <section id="view-watch" class="view" hidden>
+      <div class="panel">
+        <h2>Watchlist</h2>
+        <p class="muted">Things you buy often. They're checked every night, and you'll get an alert when one goes on sale.</p>
+        <form id="watch-form" class="add-row">
+          <input id="watch-input" type="search" placeholder="e.g. Tide Pods, Nescafé coffee" autocomplete="off" enterkeyhint="done">
+          <button class="button primary" type="submit">Add</button>
+        </form>
+        <p id="watch-status" class="status" role="status"></p>
+      </div>
+      <ul id="watch-list" class="cards"></ul>
+    </section>
+
+    <!-- Shopping list -->
+    <section id="view-list" class="view" hidden>
+      <div id="trip"></div>
     </section>
 
     <!-- My offers -->
@@ -54,7 +73,7 @@
     <section id="view-settings" class="view" hidden>
       <div class="panel">
         <h2>Stores</h2>
-        <p class="muted">Only these stores are shown in rankings.</p>
+        <p class="muted">Only these stores are shown in rankings and trip plans.</p>
         <div id="store-toggles" class="toggles"></div>
       </div>
       <div class="panel">
@@ -63,9 +82,18 @@
         <div id="rate-inputs" class="rates"></div>
       </div>
       <div class="panel">
+        <h2>Sale alerts</h2>
+        <p class="muted">Alerts arrive through the free <strong>ntfy</strong> app (App Store / Google Play). Open the subscribe link you were sent, or add the topic name in ntfy.</p>
+      </div>
+      <div class="panel">
         <h2>Claude API key</h2>
         <p class="muted">Needed only to read screenshots. It stays on this phone.</p>
         <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off">
+      </div>
+      <div class="panel">
+        <h2>GitHub token</h2>
+        <p class="muted">Lets the watchlist sync to the nightly scan so you get store prices and alerts for it. It stays on this phone.</p>
+        <input id="github-token" type="password" placeholder="github_pat_…" autocomplete="off">
       </div>
       <div class="panel">
         <h2>Data</h2>
@@ -76,6 +104,8 @@
 
   <nav class="tabbar">
     <button data-tab="deals" class="active"><span aria-hidden="true">🏷️</span>Deals</button>
+    <button data-tab="watch"><span aria-hidden="true">👀</span>Watchlist</button>
+    <button data-tab="list"><span aria-hidden="true">🛒<b id="list-count" class="count"></b></span>List</button>
     <button data-tab="mine"><span aria-hidden="true">⭐</span>My offers</button>
     <button data-tab="settings"><span aria-hidden="true">⚙️</span>Settings</button>
   </nav>

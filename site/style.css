@@ -127,7 +127,7 @@ input[type="search"], input[type="password"], input[type="number"] {
 
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -135,6 +135,50 @@ input[type="search"], input[type="password"], input[type="number"] {
   border: 0; background: none; padding: 8px 0 10px; display: grid; justify-items: center;
   gap: 2px; font-size: .75rem; color: var(--muted); cursor: pointer;
 }
-.tabbar button span { font-size: 1.25rem; }
+.tabbar button span { font-size: 1.25rem; position: relative; }
 .tabbar button.active { color: var(--accent); font-weight: 700; }
 a.button { color: var(--accent); text-decoration: none; }
+
+/* verdicts */
+.verdict { border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; font-size: .92rem; background: var(--surface); border: 1px solid var(--line); }
+.verdict.good { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.verdict.wait { background: var(--gold-soft); border-color: transparent; color: var(--gold); font-weight: 600; }
+
+/* watchlist */
+.add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 8px; }
+.add-row input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+#watch-list li { position: relative; }
+#watch-list .card { padding-right: 34px; }
+.remove {
+  border: 0; background: none; color: var(--muted); font-size: 1.3rem; line-height: 1;
+  padding: 4px 8px; cursor: pointer;
+}
+#watch-list .remove { position: absolute; top: 4px; right: 2px; }
+
+/* trip planner */
+.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.plan {
+  text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius);
+  padding: 10px 12px; cursor: pointer;
+}
+.plan.active { border: 2px solid var(--accent); }
+.plan-label { font-size: .78rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.plan-stores { font-weight: 600; margin: 2px 0; }
+.plan-cost { font-weight: 700; }
+.plan-cost .sub { font-weight: 400; color: var(--muted); font-size: .85rem; }
+.group h2 { margin-bottom: 6px; }
+.trip-items { list-style: none; margin: 0; padding: 0; }
+.trip-items li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.trip-items li:first-child { border-top: 0; }
+.trip-items label { display: flex; gap: 10px; align-items: flex-start; min-width: 0; flex: 1; cursor: pointer; }
+.trip-items input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+.trip-items .name { display: block; font-weight: 600; }
+.trip-items .sub { display: block; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.trip-items .right { display: flex; align-items: center; gap: 2px; white-space: nowrap; }
+.trip-items li.done .name, .trip-items li.done .big { text-decoration: line-through; color: var(--muted); }
+.count {
+  position: absolute; top: -4px; right: -12px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--save); color: #fff; font-size: .65rem; line-height: 16px; font-weight: 700;
+}
+.count:empty { display: none; }
+.tabbar button { font-size: .68rem; }

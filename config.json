@@ -19,8 +19,56 @@
     "Rexall"
   ],
   "loyalty_programs": {
-    "PC Optimum": ["Real Canadian Superstore", "No Frills", "Shoppers Drug Mart", "Your Independent Grocer", "Loblaws", "Wholesale Club and Club Entrepôt"],
-    "Scene+": ["Safeway", "Sobeys", "IGA", "FreshCo", "Thrifty Foods"],
-    "More Rewards": ["Save-On-Foods"]
+    "PC Optimum": [
+      "Real Canadian Superstore",
+      "No Frills",
+      "Shoppers Drug Mart",
+      "Your Independent Grocer",
+      "Loblaws",
+      "Wholesale Club and Club Entrepôt"
+    ],
+    "Scene+": [
+      "Safeway",
+      "Sobeys",
+      "IGA",
+      "FreshCo",
+      "Thrifty Foods"
+    ],
+    "More Rewards": [
+      "Save-On-Foods"
+    ]
+  },
+  "repo": "NordicMiner/deal-stacker",
+  "shelf_stores": [
+    {
+      "merchant": "Real Canadian Superstore",
+      "source": "pcx",
+      "banner": "superstore",
+      "store_id": "1568"
+    },
+    {
+      "merchant": "Your Independent Grocer",
+      "source": "pcx",
+      "banner": "independent",
+      "store_id": "4035"
+    },
+    {
+      "merchant": "Save-On-Foods",
+      "source": "saveon",
+      "store_id": "6665"
+    }
+  ],
+  "price_match": {
+    "No Frills": {
+      "program": "PC Optimum",
+      "competitors": [
+        "Walmart",
+        "Real Canadian Superstore",
+        "Save-On-Foods",
+        "Safeway",
+        "Sobeys",
+        "FreshCo"
+      ]
+    }
   }
 }

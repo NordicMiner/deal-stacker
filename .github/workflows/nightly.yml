@@ -2,7 +2,8 @@ name: Nightly deal scan
 
 on:
   schedule:
-    - cron: "5 6 * * *"   # 12:05 am Mountain Daylight Time (11:05 pm in winter)
+    - cron: "5 6 * * *"    # 12:05 am Mountain Daylight Time (11:05 pm in winter)
+    - cron: "5 13 * * *"   # 7:05 am - catches flyers that go live overnight
   push:
     branches: [main]
   workflow_dispatch:
@@ -27,9 +28,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Scan Checkout 51 + local flyers
+      - id: pages
+        uses: actions/configure-pages@v5
+      # Price history lives on the published site; bring it back before scanning.
+      - name: Restore price history
+        run: |
+          code=$(curl -s -o site/history.json -w "%{http_code}" "${{ steps.pages.outputs.base_url }}/history.json")
+          if [ "$code" = "404" ]; then rm -f site/history.json; echo "No history yet - starting fresh"
+          elif [ "$code" != "200" ]; then echo "Couldn't fetch history (HTTP $code); not overwriting it"; exit 1
+          else echo "Restored $(wc -c < site/history.json) bytes of history"; fi
+      - name: Unit tests
+        run: python -m unittest discover scraper
+      - name: Scan offers, flyers and store prices
         run: python scraper/scan.py
-      - uses: actions/configure-pages@v5
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
