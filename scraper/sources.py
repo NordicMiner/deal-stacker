@@ -68,7 +68,7 @@ def term_key(text: str) -> str:
 
 
 # Words that turn a fresh product into a different one ("Watermelon" -> watermelon juice).
-PROCESSED = frozenset({'pie', 'dried', 'punch', 'cookies', 'sparkling', 'gummy', 'muffins', 'jam', 'scented', 'flavor', 'pouches', 'snacks', 'yogurt', 'oil', 'chips', 'soda', 'scent', 'concentrate', 'yoghurt', 'jelly', 'crisps', 'flavored', 'juice', 'bars', 'flavour', 'cake', 'drink', 'dressing', 'popsicle', 'puree', 'lotion', 'bar', 'smoothie', 'cocktail', 'candle', 'refreshers', 'popsicles', 'tea', 'wash', 'spread', 'shampoo', 'frozen', 'pouch', 'gummies', 'sauce', 'baby', 'carton', 'syrup', 'drinks', 'smoothies', 'vinegar', 'flavoured', 'muffin', 'lemonade', 'freshener', 'candy', 'snack', 'cereal', 'candies'})
+PROCESSED = frozenset({'pie', 'dried', 'punch', 'cookies', 'sparkling', 'gummy', 'muffins', 'jam', 'scented', 'flavor', 'pouches', 'snacks', 'yogurt', 'oil', 'chips', 'soda', 'scent', 'concentrate', 'yoghurt', 'jelly', 'crisps', 'flavored', 'juice', 'bars', 'flavour', 'cake', 'drink', 'dressing', 'popsicle', 'puree', 'lotion', 'bar', 'smoothie', 'cocktail', 'candle', 'refreshers', 'popsicles', 'tea', 'wash', 'spread', 'shampoo', 'frozen', 'pouch', 'gummies', 'sauce', 'baby', 'carton', 'syrup', 'drinks', 'smoothies', 'vinegar', 'flavoured', 'muffin', 'lemonade', 'freshener', 'candy', 'snack', 'cereal', 'candies', 'cartons', 'bites', 'can', 'cans', 'beverage', 'beverages'})
 
 
 def relevant(query: str, name: str, strict: bool = False) -> bool:

@@ -60,7 +60,7 @@ function tokens(text) {
     .split(/[^a-z0-9&']+/).filter((t) => t.length >= 2 && !STOPWORDS.has(t) && !/^\d+$/.test(t));
 }
 // Same rules and word list as relevant()/PROCESSED in scraper/sources.py.
-const PROCESSED = new Set(["baby", "bar", "bars", "cake", "candies", "candle", "candy", "carton", "cereal", "chips", "cocktail", "concentrate", "cookies", "crisps", "dressing", "dried", "drink", "drinks", "flavor", "flavored", "flavour", "flavoured", "freshener", "frozen", "gummies", "gummy", "jam", "jelly", "juice", "lemonade", "lotion", "muffin", "muffins", "oil", "pie", "popsicle", "popsicles", "pouch", "pouches", "punch", "puree", "refreshers", "sauce", "scent", "scented", "shampoo", "smoothie", "smoothies", "snack", "snacks", "soda", "sparkling", "spread", "syrup", "tea", "vinegar", "wash", "yoghurt", "yogurt"]);
+const PROCESSED = new Set(["baby", "bar", "bars", "cake", "candies", "candle", "candy", "carton", "cereal", "chips", "cocktail", "concentrate", "cookies", "crisps", "dressing", "dried", "drink", "drinks", "flavor", "flavored", "flavour", "flavoured", "freshener", "frozen", "gummies", "gummy", "jam", "jelly", "juice", "lemonade", "lotion", "muffin", "muffins", "oil", "pie", "popsicle", "popsicles", "pouch", "pouches", "punch", "puree", "refreshers", "sauce", "scent", "scented", "shampoo", "smoothie", "smoothies", "snack", "snacks", "soda", "sparkling", "spread", "syrup", "tea", "vinegar", "wash", "yoghurt", "yogurt", "cartons", "bites", "can", "cans", "beverage", "beverages"]);
 function productMatches(product, itemName, strict = false) {
   product = String(product).replace(/\(.*?\)/g, "");
   const q = tokens(product);
