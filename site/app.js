@@ -1176,7 +1176,30 @@ function go(view) {
 }
 
 // Each screen has its own #hash so the phone's back gesture works.
+// A shared link like #import=<base64 JSON> adds prices to this phone's price book.
+// The data rides in the URL fragment, which browsers never send to the server.
+function importFromLink(encoded) {
+  try {
+    const bytes = Uint8Array.from(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const { store, date, items } = JSON.parse(new TextDecoder().decode(bytes));
+    const today = new Date().toISOString().slice(0, 10);
+    const added = addPrices(items.map((i) => ({
+      store, name: i.name, price: i.price, regularPrice: i.regularPrice || 0, perWeight: !!i.perWeight,
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date || "") && date <= today ? date : today, via: "receipt",
+    })));
+    renderPriceBook();
+    history.replaceState(null, "", "#mine");
+    go("mine");
+    $("#receipt-status").textContent = `Imported ${added} ${store} price${added === 1 ? "" : "s"} from the shared link.`;
+  } catch {
+    history.replaceState(null, "", "#mine");
+    go("mine");
+    $("#receipt-status").textContent = "That import link looks broken - ask for a new one.";
+  }
+}
+
 function route() {
+  if (location.hash.startsWith("#import=")) return importFromLink(location.hash.slice(8));
   const hash = decodeURIComponent(location.hash.slice(1));
   const [kind, ...rest] = hash.split("/");
   if ((kind === "offer" || kind === "watch") && rest.length) showDetail(kind, rest.join("/"));
