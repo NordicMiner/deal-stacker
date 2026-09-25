@@ -431,7 +431,7 @@ function renderTrip() {
   }
   const { plans, pricedCount } = planTrip(entries);
   if (planChoice == null || planChoice >= plans.length) planChoice = Math.min(1, plans.length - 1);
-  const plan = plans[planChoice];
+  const plan = routeResult ? routeResult.options[routeChoice] : plans[planChoice];
 
   const groups = new Map();
   for (const e of entries) {
@@ -469,16 +469,231 @@ function renderTrip() {
     </li>`).join("")}</ul></div>`).join("");
 
   out.innerHTML = `
-    ${plans.length ? `<div class="plans">${planHtml}</div>` : ""}
+    ${routeHtml()}
+    ${plans.length && !routeResult ? `<div class="plans">${planHtml}</div>` : ""}
     ${cashback ? `<p class="muted">After shopping, claim ${money(cashback)} in Checkout 51 (upload your receipts).</p>` : ""}
     ${groupHtml}
     <div class="links"><button class="button small" data-clear="done">Clear ticked items</button>
       <button class="button small" data-clear="all">Clear list</button></div>`;
 }
 
+// ---------- route planner (which stores, which branches, what order) ----------
+
+const OVERPASS = "https://overpass-api.de/api/interpreter";
+const OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/";
+const NOMINATIM = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ca&q=";
+const BRANCH_RADIUS_M = 25000;
+const MAX_STOPS = 4;
+// Order matters: liquor stores before their grocery banners.
+const BRANCH_PATTERNS = [
+  ["Sobeys & Safeway Liquor", /(sobeys|safeway)\s+liquor/i],
+  ["Real Canadian Liquor Store", /liquor\s*store|real canadian liquor/i],
+  ["Real Canadian Superstore", /superstore/i],
+  ["Walmart", /walmart/i], ["No Frills", /no\s?frills/i], ["Save-On-Foods", /save[- ]?on/i],
+  ["Safeway", /safeway/i], ["Sobeys", /sobeys/i], ["Costco", /costco/i],
+  ["Shoppers Drug Mart", /shoppers/i], ["Your Independent Grocer", /independent grocer/i],
+  ["London Drugs", /london drugs/i], ["PetSmart", /petsmart/i], ["Pet Valu", /pet\s?valu/i],
+  ["T&T Supermarket", /t\s?&\s?t\b/i], ["Giant Tiger", /giant tiger/i], ["Dollarama", /dollarama/i],
+  ["Rexall", /rexall/i], ["IGA", /\biga\b/i], ["FreshCo", /freshco/i], ["Canadian Tire", /canadian tire/i],
+];
+
+let home = load("home", null); // {lat, lon, label} - stays on this phone
+let routeResult = null;
+let routeChoice = 0;
+
+function km(a, b) {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+
+// Store branches near home, from OpenStreetMap; cached for 30 days.
+async function nearbyBranches() {
+  const cached = load("branches", null);
+  if (cached && km(cached, home) < 2 && Date.now() - cached.at < 30 * 864e5) return cached.list;
+  const around = `(around:${BRANCH_RADIUS_M},${home.lat},${home.lon})`;
+  const q = `[out:json][timeout:60];(nwr["shop"~"supermarket|chemist|pet|department_store|variety_store|wholesale|alcohol|general|doityourself"]${around};nwr["amenity"="pharmacy"]${around};);out center tags;`;
+  const res = await fetch(OVERPASS, { method: "POST", body: `data=${encodeURIComponent(q)}`,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+  if (!res.ok) throw new Error(`store map lookup failed (${res.status})`);
+  const list = [];
+  for (const el of (await res.json()).elements || []) {
+    const t = el.tags || {};
+    const name = `${t.brand || ""} ${t.name || ""}`;
+    const hit = BRANCH_PATTERNS.find(([, rx]) => rx.test(name));
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    if (!hit || lat == null) continue;
+    const street = [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" ");
+    list.push({ merchant: hit[0], lat, lon, label: street || t["addr:city"] || t.name || hit[0] });
+  }
+  save("branches", { lat: home.lat, lon: home.lon, at: Date.now(), list });
+  return list;
+}
+
+async function drivingMatrix(points) {
+  const coords = points.map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(";");
+  const res = await fetch(`${OSRM_TABLE}${coords}?annotations=duration,distance`);
+  const json = await res.json();
+  if (json.code !== "Ok") throw new Error("couldn't get driving times");
+  return { dur: json.durations, dist: json.distances };
+}
+
+function* permutations(arr) {
+  if (arr.length <= 1) { yield arr; return; }
+  for (let i = 0; i < arr.length; i++) {
+    for (const rest of permutations([...arr.slice(0, i), ...arr.slice(i + 1)])) yield [arr[i], ...rest];
+  }
+}
+function* combinations(arr, k, start = 0, pick = []) {
+  if (pick.length === k) { yield pick; return; }
+  for (let i = start; i < arr.length; i++) yield* combinations(arr, k, i + 1, [...pick, arr[i]]);
+}
+function* cartesian(lists, i = 0, pick = []) {
+  if (i === lists.length) { yield pick; return; }
+  for (const x of lists[i]) yield* cartesian(lists, i + 1, [...pick, x]);
+}
+
+async function planRoute(fromHere) {
+  const status = $("#route-status");
+  try {
+    if (!home) throw new Error("set your home in Settings first");
+    const entries = tripEntries().filter((e) => e.options.size);
+    if (!entries.length) throw new Error("add some priced items to your list first");
+
+    status.textContent = "Finding stores near you…";
+    let start = home;
+    if (fromHere) {
+      const pos = await new Promise((ok, fail) => navigator.geolocation.getCurrentPosition(ok, fail, { timeout: 15000 }));
+      start = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Current location" };
+    }
+    const branches = await nearbyBranches();
+
+    // Stores worth visiting: cheapest (or within 50¢ of cheapest) for at least one item.
+    const useful = new Map();
+    for (const e of entries) {
+      const best = Math.min(...[...e.options.values()].map((r) => r.s.final));
+      for (const [merchant, r] of e.options) if (r.s.final <= best + 0.5) useful.set(merchant, (useful.get(merchant) || 0) + 1);
+    }
+    const merchants = [...useful.entries()].sort((a, b) => b[1] - a[1]).map(([m]) => m)
+      .filter((m) => branches.some((b) => b.merchant === m)).slice(0, 8);
+    if (!merchants.length) throw new Error("couldn't find any of those stores on the map near home");
+
+    // Up to three nearest branches per store; points 0 = home, 1 = start, then branches.
+    let idx = 2;
+    const nearest = new Map(merchants.map((m) => [m, branches.filter((x) => x.merchant === m)
+      .sort((a, c) => km(a, start) - km(c, start)).slice(0, 3).map((x) => ({ ...x, idx: idx++ }))]));
+    const points = [home, start, ...[...nearest.values()].flat()];
+
+    status.textContent = "Working out driving times…";
+    const { dur, dist } = await drivingMatrix(points);
+    const perKm = settings.perKm ?? 0.25, perHour = settings.perHour ?? 10;
+
+    const best = [];
+    for (let k = 1; k <= Math.min(MAX_STOPS, merchants.length); k++) {
+      let top = null;
+      for (const set of combinations(merchants, k)) {
+        let covered = 0, groceries = 0;
+        for (const e of entries) {
+          const finals = set.filter((m) => e.options.has(m)).map((m) => e.options.get(m).s.final);
+          if (finals.length) { covered++; groceries += Math.min(...finals); }
+        }
+        let route = null;
+        for (const pick of cartesian(set.map((m) => nearest.get(m)))) {
+          for (const order of permutations(pick)) {
+            let s = 0, d = 0, at = 1; // leave from start (index 1), finish at home (index 0)
+            for (const b of order) { s += dur[at][b.idx]; d += dist[at][b.idx]; at = b.idx; }
+            s += dur[at][0]; d += dist[at][0];
+            const cost = (d / 1000) * perKm + (s / 3600) * perHour;
+            if (!route || cost < route.cost) route = { order, seconds: s, meters: d, cost };
+          }
+        }
+        const cand = { set: route.order.map((b) => b.merchant), stops: route.order, covered, groceries,
+          minutes: Math.round(route.seconds / 60), km: route.meters / 1000, driving: route.cost };
+        cand.total = cand.groceries + cand.driving;
+        if (!top || cand.covered > top.covered || (cand.covered === top.covered && cand.total < top.total)) top = cand;
+      }
+      best.push({ ...top, label: `${k} stop${k > 1 ? "s" : ""}` });
+    }
+    const maxCovered = Math.max(...best.map((b) => b.covered));
+    const options = best.filter((b, i) => i === 0 || b.covered > best[i - 1].covered || b.total < best[i - 1].total - 0.5);
+    let pick = 0;
+    options.forEach((o, i) => {
+      const p = options[pick];
+      if (o.covered > p.covered || (o.covered === p.covered && o.total < p.total)) pick = i;
+    });
+    routeResult = { options, start, total: entries.length, maxCovered };
+    routeChoice = pick;
+    status.textContent = "";
+    renderTrip();
+  } catch (err) {
+    status.textContent = `Couldn't plan the route: ${err.message || err}`;
+  }
+}
+
+function mapsLink(route) {
+  const ll = (p) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
+  const waypoints = route.stops.map(ll).join("|");
+  return `https://www.google.com/maps/dir/?api=1&origin=${ll(routeResult.start)}&destination=${ll(home)}`
+    + `&waypoints=${encodeURIComponent(waypoints)}&travelmode=driving`;
+}
+
+function routeHtml() {
+  if (!home) {
+    return `<div class="panel route"><h2>🚗 Route</h2>
+      <p class="muted">Set your home in Settings and the app will plan the cheapest drive: which stores, which branches and in what order.</p>
+      <a class="button small" href="#settings">Set home</a></div>`;
+  }
+  const head = `<div class="panel route"><h2>🚗 Route</h2>
+    <div class="links"><button class="button primary" data-plan-route="home">Plan my route</button>
+      <button class="button" data-plan-route="here">From where I am</button>
+      ${routeResult ? `<button class="button small" data-clear-route>Clear</button>` : ""}</div>
+    <p id="route-status" class="status" role="status"></p>`;
+  if (!routeResult) return `${head}</div>`;
+  const r = routeResult.options[routeChoice];
+  const cards = routeResult.options.map((o, i) => `<button class="plan${i === routeChoice ? " active" : ""}" data-route-choice="${i}">
+      <div class="plan-label">${esc(o.label)}</div>
+      <div class="plan-cost">${money(o.total)}</div>
+      <div class="sub">${money(o.groceries)} groceries + ${money(o.driving)} driving</div>
+      <div class="sub">${o.minutes} min · ${o.km.toFixed(1)} km · ${o.covered}/${routeResult.total} items</div>
+    </button>`).join("");
+  const legs = [`🏠 ${esc(routeResult.start === home ? "Home" : "Current location")}`,
+    ...r.stops.map((b, i) => `${i + 1}. <strong>${esc(short(b.merchant))}</strong> <span class="sub">${esc(b.label)}</span>`),
+    "🏠 Home"].map((l) => `<li>${l}</li>`).join("");
+  return `${head}
+    <div class="plans">${cards}</div>
+    <ol class="legs">${legs}</ol>
+    <a class="button primary" href="${esc(mapsLink(r))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+    <p class="note">Driving counted at $${(settings.perKm ?? 0.25).toFixed(2)}/km plus $${settings.perHour ?? 10}/hour of your time (change in Settings). Shelf prices are from one branch of each store and are usually the same at the others.</p>
+  </div>`;
+}
+
+async function findHome(useLocation) {
+  const status = $("#home-status");
+  try {
+    if (useLocation) {
+      status.textContent = "Getting your location…";
+      const pos = await new Promise((ok, fail) => navigator.geolocation.getCurrentPosition(ok, fail, { timeout: 15000 }));
+      home = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Saved from this phone's location" };
+    } else {
+      const q = $("#home-input").value.trim();
+      if (!q) return;
+      status.textContent = "Looking up that address…";
+      const [hit] = await (await fetch(NOMINATIM + encodeURIComponent(q))).json();
+      if (!hit) throw new Error("couldn't find that address - try adding the city");
+      home = { lat: +hit.lat, lon: +hit.lon, label: hit.display_name };
+    }
+    save("home", home);
+    routeResult = null;
+    status.textContent = `Home set: ${home.label}`;
+  } catch (err) {
+    status.textContent = `Couldn't set home: ${err.message || "location permission was denied"}`;
+  }
+}
+
 function toggleList(kind, key) {
   const i = tripList.findIndex((t) => t.kind === kind && t.key === key);
   if (i >= 0) tripList.splice(i, 1); else tripList.push({ kind, key, done: false });
+  routeResult = null;
   save("tripList", tripList);
   updateListBadge();
 }
@@ -831,6 +1046,9 @@ function renderSettings() {
   $("#rate-inputs").innerHTML = Object.entries(settings.rates).map(([p, r]) => `<label>${esc(p)}
     <input type="number" min="0" step="0.25" inputmode="decimal" data-rate="${esc(p)}" value="${r}"></label>`).join("");
   $("#api-key").value = settings.apiKey || "";
+  $("#per-km").value = settings.perKm ?? 0.25;
+  $("#per-hour").value = settings.perHour ?? 10;
+  $("#home-status").textContent = home ? `Home set: ${home.label}` : "";
   $("#github-token").value = settings.githubToken || "";
 }
 
@@ -909,11 +1127,17 @@ function wire() {
   $("#trip").addEventListener("click", (e) => {
     const plan = e.target.closest("[data-plan]");
     if (plan) { planChoice = +plan.dataset.plan; renderTrip(); }
+    const routeBtn = e.target.closest("[data-plan-route]");
+    if (routeBtn) planRoute(routeBtn.dataset.planRoute === "here");
+    const choice = e.target.closest("[data-route-choice]");
+    if (choice) { routeChoice = +choice.dataset.routeChoice; renderTrip(); }
+    if (e.target.closest("[data-clear-route]")) { routeResult = null; renderTrip(); }
     const un = e.target.closest("[data-unlist]");
     if (un) { const [kind, ...key] = un.dataset.unlist.split("|"); toggleList(kind, key.join("|")); renderTrip(); }
     const clear = e.target.closest("[data-clear]");
     if (clear) {
       tripList = clear.dataset.clear === "all" ? [] : tripList.filter((t) => !t.done);
+      routeResult = null;
       save("tripList", tripList);
       updateListBadge();
       renderTrip();
@@ -980,6 +1204,15 @@ function wire() {
     settings.rates[input.dataset.rate] = Math.max(0, parseFloat(input.value) || 0);
     save("settings", settings);
   });
+  $("#home-form").addEventListener("submit", (e) => { e.preventDefault(); findHome(false); });
+  $("#home-here").addEventListener("click", () => findHome(true));
+  for (const [id, key] of [["#per-km", "perKm"], ["#per-hour", "perHour"]]) {
+    $(id).addEventListener("change", (e) => {
+      settings[key] = Math.max(0, parseFloat(e.target.value) || 0);
+      save("settings", settings);
+      routeResult = null;
+    });
+  }
   $("#api-key").addEventListener("change", (e) => {
     settings.apiKey = e.target.value.trim();
     save("settings", settings);

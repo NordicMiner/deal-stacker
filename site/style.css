@@ -194,3 +194,11 @@ a.button { color: var(--accent); text-decoration: none; }
 .add-row select, .add-row input[type="number"] {
   width: 100%; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
 }
+
+/* route planner */
+.route .plans { margin-top: 12px; }
+.route .plan .sub { color: var(--muted); font-size: .8rem; }
+.legs { margin: 4px 0 12px; padding-left: 0; list-style: none; }
+.legs li { padding: 6px 0; border-top: 1px dashed var(--line); }
+.legs li:first-child { border-top: 0; }
+.legs .sub { color: var(--muted); font-size: .82rem; }

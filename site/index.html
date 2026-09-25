@@ -87,6 +87,24 @@
         <div id="store-toggles" class="toggles"></div>
       </div>
       <div class="panel">
+        <h2>Home</h2>
+        <p class="muted">Used to plan shopping routes. It stays on this phone.</p>
+        <form id="home-form" class="add-row">
+          <input id="home-input" type="search" placeholder="Street address, St. Albert" autocomplete="street-address">
+          <button class="button primary" type="submit">Set</button>
+        </form>
+        <div class="links"><button id="home-here" class="button small" type="button">Use my current location</button></div>
+        <p id="home-status" class="status" role="status"></p>
+      </div>
+      <div class="panel">
+        <h2>Driving cost</h2>
+        <p class="muted">How the route planner weighs a longer drive against grocery savings.</p>
+        <div class="rates">
+          <label>Per kilometre ($) <input id="per-km" type="number" min="0" step="0.05" inputmode="decimal"></label>
+          <label>Your time, per hour ($) <input id="per-hour" type="number" min="0" step="1" inputmode="decimal"></label>
+        </div>
+      </div>
+      <div class="panel">
         <h2>Points value</h2>
         <p class="muted">Dollars per 1,000 points.</p>
         <div id="rate-inputs" class="rates"></div>
