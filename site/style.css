@@ -182,3 +182,15 @@ a.button { color: var(--accent); text-decoration: none; }
 }
 .count:empty { display: none; }
 .tabbar button { font-size: .68rem; }
+
+/* price book */
+.book { list-style: none; margin: 10px 0 0; padding: 0; }
+.book-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.book-row .name { display: block; font-weight: 600; font-size: .92rem; }
+.book-row .sub { display: block; color: var(--muted); font-size: .8rem; }
+.book-row .right { display: flex; align-items: center; white-space: nowrap; }
+.add-price { margin-top: 12px; }
+.add-row.three { grid-template-columns: 1fr 90px auto; }
+.add-row select, .add-row input[type="number"] {
+  width: 100%; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+}

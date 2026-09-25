@@ -8,7 +8,7 @@ const DEFAULT_RATES = { "PC Optimum": 1, "Scene+": 10, "More Rewards": 1.5, "Be 
 const DEFAULT_STORES = [
   "Walmart", "Real Canadian Superstore", "No Frills", "Save-On-Foods", "Safeway",
   "Sobeys", "Costco", "Shoppers Drug Mart", "Your Independent Grocer",
-  "Pet Valu", "PetSmart", "Real Canadian Liquor Store", "Sobeys & Safeway Liquor",
+  "Pet Valu", "PetSmart", "Real Canadian Liquor Store", "Sobeys & Safeway Liquor", "London Drugs",
 ];
 const STOPWORDS = new Set(["any", "or", "and", "the", "with", "of", "for", "products", "product",
   "variety", "varieties", "select", "ct", "pk", "pack", "buy", "get", "all", "size", "sizes",
@@ -169,7 +169,9 @@ const isSale = (m) => m.source === "flyer" || m.source === "pricematch" || (m.wa
 
 // Best option per store, cheapest first.
 function ranked(item) {
-  const mine = item.matches.filter((m) => settings.stores.includes(m.merchant));
+  const known = new Set([...(data.stores || []), ...DEFAULT_STORES]);
+  const mine = [...item.matches, ...priceBookMatches(item)].filter((m) => settings.stores.includes(m.merchant) ||
+    (m.source === "pricebook" && !known.has(m.merchant)));
   const all = [...mine, ...priceMatchOptions(item.matches)].map((m) => ({ m, s: stack(m, item.c51) }));
   const best = new Map();
   for (const r of all) {
@@ -202,6 +204,7 @@ function rankHtml(m, s, isBest) {
   let priceLabel = "Flyer price";
   if (m.source === "shelf") priceLabel = m.wasPrice && m.wasPrice > m.price ? `Sale price (reg. ${money(m.wasPrice)})` : "Shelf price";
   if (m.source === "pricematch") priceLabel = `Price match (${short(m.priceMatchFrom)} flyer)`;
+  if (m.source === "pricebook") priceLabel = `${m.via === "manual" ? "Price you saw" : "Your receipt"}, ${shortDate(m.seen)}`;
   const priceRow = m.price != null
     ? `<tr><td>${esc(priceLabel)}${m.perWeight ? " (by weight)" : ""}</td><td>${esc(m.priceText)}</td></tr>`
     : `<tr><td>Price</td><td>not listed</td></tr>`;
@@ -213,6 +216,7 @@ function rankHtml(m, s, isBest) {
     m.source === "pricematch" ? `Show the ${esc(m.priceMatchFrom)} flyer at the till. It must be the same item and size.` : "",
     m.saleStory ? `${m.source === "flyer" ? "Flyer" : "Store"}: ${esc(m.saleStory)}` : "",
     m.source === "shelf" && data.shelfStores?.[m.merchant] ? `Price from ${esc(data.shelfStores[m.merchant])}` : "",
+    m.source === "pricebook" ? `From your price book${m.paid < m.price ? ` (you paid ${money(m.paid)} on sale)` : ""}. Prices may have changed since.` : "",
     ends,
   ].filter(Boolean).map((n) => `<div class="note">${n}</div>`).join("");
   return `<li class="rank${isBest ? " best" : ""}">
@@ -285,6 +289,12 @@ function renderDeals() {
 function showDetail(kind, key) {
   const item = resolveItem(kind, key);
   if (!item) return go("deals");
+  if (item.pending && !liveResults.has(key)) {
+    liveSearch(key).catch(() => []).then((found) => {
+      liveResults.set(key, found);
+      if (decodeURIComponent(location.hash) === `#watch/${key}`) showDetail(kind, key);
+    });
+  }
   const rows = ranked(item);
   const inList = tripList.some((t) => t.kind === kind && t.key === key);
   $("#detail").innerHTML = `
@@ -300,7 +310,17 @@ function showDetail(kind, key) {
     <ul class="cards">${rows.length
       ? rows.map((r, i) => rankHtml(r.m, r.s, i === 0 && r.s.final != null)).join("")
       : `<li class="empty">${item.pending ? "Full prices arrive after the next scan." : "No local price found this week."}${item.c51 ? ` It still pays ${cashText(item.c51)} back at any store.` : ""}</li>`}</ul>
-    ${shopLinks(item.product)}`;
+    ${shopLinks(item.product)}
+    <form class="panel add-price" data-add-price="${esc(item.product)}">
+      <h2>Saw a price?</h2>
+      <p class="muted">Add a price from a shelf tag or Walmart.ca and it's included in the ranking.</p>
+      <div class="add-row three">
+        <select name="store" aria-label="Store">${RECEIPT_STORES.filter((x) => x !== "Other")
+          .map((x) => `<option${x === "Walmart" ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>
+        <input name="price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="$" aria-label="Price" required>
+        <button class="button primary" type="submit">Add</button>
+      </div>
+    </form>`;
   go("detail");
 }
 
@@ -532,40 +552,44 @@ async function imageSlices(file) {
   return slices;
 }
 
-async function readScreenshots(files) {
-  const status = $("#shot-status");
-  if (!settings.apiKey) {
-    status.textContent = "Add your Claude API key in Settings first.";
-    return;
-  }
+// Sends photos to Claude and returns JSON matching the schema.
+async function askClaude(files, prompt, schema, status, noun) {
+  if (!settings.apiKey) throw new Error("add your Claude API key in Settings first");
+  status.textContent = `Preparing ${noun}…`;
+  const images = [];
+  for (const f of files) images.push(...await imageSlices(f));
+  if (images.length > 20) images.length = 20;
+  status.textContent = `Reading ${files.length} ${noun}… (about 30 seconds)`;
+  const { default: Anthropic } = await import("https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm");
+  const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
+  let response;
   try {
-    status.textContent = "Preparing screenshots…";
-    const images = [];
-    for (const f of files) images.push(...await imageSlices(f));
-    if (images.length > 20) images.length = 20;
-
-    status.textContent = `Reading ${files.length} screenshot${files.length > 1 ? "s" : ""}… (about 30 seconds)`;
-    const { default: Anthropic } = await import("https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm");
-    const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
-    const response = await client.beta.messages.create({
+    response = await client.beta.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 16000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { format: { type: "json_schema", schema: OFFER_SCHEMA } },
+      output_config: { format: { type: "json_schema", schema } },
       messages: [{
         role: "user",
         content: [
           ...images.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
-          { type: "text", text: EXTRACT_PROMPT },
+          { type: "text", text: prompt },
         ],
       }],
     });
-    if (response.stop_reason === "refusal") throw new Error("Claude couldn't read these screenshots.");
-    if (response.stop_reason === "max_tokens") throw new Error("Too many offers at once - try fewer screenshots.");
-    const text = response.content.find((b) => b.type === "text")?.text;
-    const found = JSON.parse(text).offers;
+  } catch (err) {
+    throw new Error(err?.status === 401 ? "that API key didn't work - check it in Settings" : (err?.message || String(err)));
+  }
+  if (response.stop_reason === "refusal") throw new Error(`Claude couldn't read these ${noun}`);
+  if (response.stop_reason === "max_tokens") throw new Error("too much at once - try fewer photos");
+  return JSON.parse(response.content.find((b) => b.type === "text")?.text);
+}
 
+async function readScreenshots(files) {
+  const status = $("#shot-status");
+  try {
+    const found = (await askClaude(files, EXTRACT_PROMPT, OFFER_SCHEMA, status, "screenshots")).offers;
     const key = (x) => `${x.program}|${x.product.toLowerCase()}|${x.points}|${x.dollarsOff}`;
     const existing = new Set(myOffers.map(key));
     const fresh = found.filter((x) => !existing.has(key(x)))
@@ -575,9 +599,158 @@ async function readScreenshots(files) {
     status.textContent = `Added ${fresh.length} offer${fresh.length === 1 ? "" : "s"}${found.length > fresh.length ? ` (${found.length - fresh.length} already saved)` : ""}.`;
     renderMine();
   } catch (err) {
-    const msg = err?.status === 401 ? "That API key didn't work - check it in Settings." : (err?.message || String(err));
-    status.textContent = `Couldn't read screenshots: ${msg}`;
+    status.textContent = `Couldn't read screenshots: ${err.message}`;
   }
+}
+
+// ---------- price book (receipts, shelf tags, prices she types in) ----------
+
+const RECEIPT_STORES = ["Walmart", "Real Canadian Superstore", "No Frills", "Your Independent Grocer", "Save-On-Foods",
+  "Safeway", "Sobeys", "IGA", "FreshCo", "Costco", "Shoppers Drug Mart", "London Drugs", "Rexall", "PetSmart",
+  "Pet Valu", "Giant Tiger", "T&T Supermarket", "Dollarama", "Canadian Tire", "Other"];
+
+const RECEIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    receipts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          store: { type: "string", enum: RECEIPT_STORES },
+          date: { type: "string" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                price: { type: "number" },
+                regularPrice: { type: "number" },
+                perWeight: { type: "boolean" },
+              },
+              required: ["name", "price", "regularPrice", "perWeight"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["store", "date", "items"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["receipts"],
+  additionalProperties: false,
+};
+
+const RECEIPT_PROMPT = `These are photos of Canadian store receipts or shelf price tags. There may be several receipts or tags.
+
+For each receipt or tag:
+- store: the store it is from.
+- date: YYYY-MM-DD if shown, otherwise "".
+- items: every product line, with:
+  - name: the full product name with brand and size, expanding receipt abbreviations (e.g. "GV 2% MLK 4L" -> "Great Value 2% Milk 4 L"). If you can't tell what an abbreviation means, keep the words you can read.
+  - price: the price for ONE item before tax, after any instant discount printed on the receipt or tag.
+  - regularPrice: the regular price if the receipt or tag shows one (e.g. "was $5.99" or a discount line), otherwise 0.
+  - perWeight: true for items sold by weight (produce, meat), otherwise false.
+
+Skip deposits, eco fees, bags, tax, subtotals, totals, payment and loyalty lines.`;
+
+let priceBook = load("priceBook", []); // [{id, store, name, price, regularPrice, perWeight, date, via}]
+const PRICE_BOOK_DAYS = 120;
+
+function prunePriceBook() {
+  const cutoff = new Date(Date.now() - PRICE_BOOK_DAYS * 864e5).toISOString().slice(0, 10);
+  const kept = priceBook.filter((e) => e.date >= cutoff);
+  if (kept.length !== priceBook.length) { priceBook = kept; save("priceBook", priceBook); }
+}
+
+function addPrices(entries) {
+  const key = (e) => `${e.store}|${e.name.toLowerCase()}|${e.price}|${e.date}`;
+  const existing = new Set(priceBook.map(key));
+  const fresh = entries.filter((e) => e.price > 0 && !existing.has(key(e)))
+    .map((e) => ({ ...e, id: crypto.randomUUID() }));
+  priceBook = [...fresh, ...priceBook];
+  save("priceBook", priceBook);
+  return fresh.length;
+}
+
+async function readReceipts(files) {
+  const status = $("#receipt-status");
+  try {
+    const { receipts } = await askClaude(files, RECEIPT_PROMPT, RECEIPT_SCHEMA, status, "photos");
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = receipts.filter((r) => r.store !== "Other").flatMap((r) => r.items.map((i) => ({
+      store: r.store, name: i.name, price: i.price, regularPrice: i.regularPrice || 0,
+      perWeight: i.perWeight, date: /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date <= today ? r.date : today, via: "receipt",
+    })));
+    const added = addPrices(entries);
+    const stores = [...new Set(receipts.map((r) => r.store))].join(", ");
+    status.textContent = `Saved ${added} price${added === 1 ? "" : "s"}${stores ? ` from ${stores}` : ""}.`;
+    renderPriceBook();
+  } catch (err) {
+    status.textContent = `Couldn't read those photos: ${err.message}`;
+  }
+}
+
+// Her own prices fill in stores the nightly scan can't see (Walmart, London Drugs, PetSmart...).
+function priceBookMatches(item) {
+  const live = new Set(item.matches.filter((m) => m.price != null).map((m) => m.merchant));
+  const wanted = item.c51 ? offerSizes(item.c51.name, item.c51.description) : [];
+  const latest = new Map();
+  for (const e of priceBook) {
+    if (live.has(e.store) || e.perWeight || !productMatches(item.product, e.name) || !sizeOk(wanted, e.name)) continue;
+    const cur = latest.get(e.store);
+    if (!cur || e.date > cur.date) latest.set(e.store, e);
+  }
+  return [...latest.values()].map((e) => {
+    const price = e.regularPrice > e.price ? e.regularPrice : e.price; // a past sale price may be over
+    return { source: "pricebook", merchant: e.store, name: e.name, price, priceText: money(price),
+      paid: e.price, seen: e.date, via: e.via, program: programFor(e.store), points: 0, storeCoupon: 0 };
+  });
+}
+
+function renderPriceBook() {
+  const out = $("#pricebook-list");
+  if (!priceBook.length) { out.innerHTML = ""; return; }
+  const stores = new Set(priceBook.map((e) => e.store));
+  out.innerHTML = `<li class="note">${priceBook.length} prices from ${stores.size} store${stores.size > 1 ? "s" : ""}, kept for ${PRICE_BOOK_DAYS} days.</li>`
+    + priceBook.slice(0, 40).map((e) => `<li class="book-row">
+      <span><span class="name">${esc(e.name)}</span><span class="sub">${esc(short(e.store))} · ${shortDate(e.date)}${e.via === "manual" ? " · typed in" : ""}</span></span>
+      <span class="right"><span class="big">${money(e.price)}</span>
+        <button class="remove" data-unbook="${esc(e.id)}" aria-label="Remove">×</button></span></li>`).join("");
+}
+
+// Same rules as offer_sizes()/size_ok() in scraper/sources.py.
+const UNITS = "kg|g|ml|l|ct|count|pk|pack|pods?|pacs?|sheets?|ea|bars?|rolls?|capsules?|caplets?|tablets?";
+const UNIT_ALIASES = { count: "ct", pk: "ct", pack: "ct", pod: "ct", pods: "ct", pac: "ct", pacs: "ct", ea: "ct",
+  bar: "ct", bars: "ct", roll: "ct", rolls: "ct", sheet: "sheets", capsule: "ct", capsules: "ct", caplet: "ct",
+  caplets: "ct", tablet: "ct", tablets: "ct" };
+const SIZE_RE = new RegExp(String.raw`((?:\d+(?:\.\d+)?\s*(?:,|or|/)\s*)*\d+(?:\.\d+)?)\s*(${UNITS})\b`, "gi");
+function sizes(text) {
+  const out = new Set();
+  for (const [, nums, rawUnit] of String(text || "").matchAll(SIZE_RE)) {
+    for (const n of nums.match(/\d+(?:\.\d+)?/g)) {
+      let unit = UNIT_ALIASES[rawUnit.toLowerCase()] || rawUnit.toLowerCase();
+      let value = +n;
+      if (unit === "kg") { value *= 1000; unit = "g"; }
+      if (unit === "l") { value *= 1000; unit = "ml"; }
+      out.add(`${Math.round(value * 10) / 10}|${unit}`);
+    }
+  }
+  return [...out];
+}
+function offerSizes(name, description) {
+  const valid = String(description || "").split(/(?<=\.)\s+/)
+    .filter((x) => x.toLowerCase().startsWith("valid on") && !x.toLowerCase().includes("exclud"));
+  return [...new Set([...sizes(name), ...sizes(valid.join(" "))])];
+}
+function sizeOk(wanted, itemName) {
+  if (!wanted.length) return true;
+  const have = sizes(itemName);
+  const units = new Set(have.map((x) => x.split("|")[1]));
+  if (!wanted.some((w) => units.has(w.split("|")[1]))) return true;
+  return wanted.some((w) => have.includes(w));
 }
 
 function dropExpired() {
@@ -757,6 +930,28 @@ function wire() {
     box.closest("li").classList.toggle("done", box.checked);
   });
 
+  $("#receipts").addEventListener("change", (e) => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    if (files.length) readReceipts(files);
+  });
+  $("#pricebook-list").addEventListener("click", (e) => {
+    const remove = e.target.closest("[data-unbook]");
+    if (!remove) return;
+    priceBook = priceBook.filter((x) => x.id !== remove.dataset.unbook);
+    save("priceBook", priceBook);
+    renderPriceBook();
+  });
+  $("#detail").addEventListener("submit", (e) => {
+    const form = e.target.closest("[data-add-price]");
+    if (!form) return;
+    e.preventDefault();
+    const price = parseFloat(form.price.value);
+    if (!(price > 0)) return;
+    addPrices([{ store: form.store.value, name: form.dataset.addPrice, price, regularPrice: 0, perWeight: false,
+      date: new Date().toISOString().slice(0, 10), via: "manual" }]);
+    route(); // re-render the detail with the new price
+  });
   $("#shots").addEventListener("change", (e) => {
     const files = [...e.target.files];
     e.target.value = "";
@@ -799,7 +994,9 @@ function wire() {
 async function init() {
   wire();
   dropExpired();
+  prunePriceBook();
   renderMine();
+  renderPriceBook();
   updateListBadge();
   try {
     const res = await fetch(`data.json?t=${Date.now()}`);
