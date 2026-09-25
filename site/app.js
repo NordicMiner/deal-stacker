@@ -94,13 +94,22 @@ const cashText = (o) => o.cashbackMin && o.cashbackMin !== o.cashback
 
 // ---------- items: Checkout 51 offers and watched products share one shape ----------
 
+let c51Cash = load("c51Cash", {}); // offer id -> the amount her Checkout 51 app shows
+
+// The offer with her own cashback amount, when she has told us it.
+function myC51(o) {
+  const mine = c51Cash[o.id];
+  return mine == null ? o : { ...o, cashback: mine, cashbackMin: mine };
+}
+
 function offerItem(o) {
   return { kind: "offer", key: o.id, title: o.name, image: o.image, desc: o.description,
-    product: o.product, matches: o.matches || [], verdict: o.verdict, c51: o };
+    product: o.product, matches: o.matches || [], verdict: o.verdict, c51: myC51(o) };
 }
 function watchItem(term) {
   const server = (data.watch || []).find((w) => w.term.toLowerCase() === term.toLowerCase());
-  const c51 = data.offers.find((o) => productMatches(term, o.product) || productMatches(o.product, term));
+  const found = data.offers.find((o) => productMatches(term, o.product) || productMatches(o.product, term));
+  const c51 = found && myC51(found);
   const matches = server?.matches || liveResults.get(term) || [];
   return { kind: "watch", key: term, title: term, product: term, desc: c51 ? `Checkout 51: ${c51.name}` : "",
     image: c51?.image || matches.find((m) => m.image)?.image || "", matches,
@@ -363,6 +372,13 @@ function showDetail(kind, key) {
     <div class="detail-head">${item.image ? `<img src="${esc(item.image)}" alt="">` : `<div class="thumb"></div>`}
       <div><h2>${esc(item.title)}</h2>
       ${item.c51 ? `<div class="cash">${cashText(item.c51)} back with Checkout 51</div>` : ""}</div></div>
+    ${kind === "offer" && item.c51 && (() => {
+      const o = data.offers.find((x) => x.id === item.c51.id);
+      if (!o || o.cashbackMin === o.cashback) return "";
+      const amounts = [...new Set([o.cashbackMin, o.cashback])];
+      return `<div class="limit"><span>My app shows</span>${amounts.map((a) => `<button class="button small${c51Cash[o.id] === a ? " primary" : ""}"
+        data-cash="${a}" data-offer-id="${esc(o.id)}">${money(a)}</button>`).join("")}</div>`;
+    })()}
     ${item.c51 ? `<div class="limit"><span>Checkout 51 lets me claim it</span>
       <button class="button small" data-limit="-1" data-offer-id="${esc(item.c51.id)}" aria-label="Fewer">−</button>
       <strong>${claimLimit(item.c51)}×</strong>
@@ -797,6 +813,16 @@ const OFFER_SCHEMA = {
   required: ["offers"],
   additionalProperties: false,
 };
+OFFER_SCHEMA.properties.checkout51 = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { name: { type: "string" }, cashback: { type: "number" }, claimLimit: { type: "integer" } },
+    required: ["name", "cashback", "claimLimit"],
+    additionalProperties: false,
+  },
+};
+OFFER_SCHEMA.required.push("checkout51");
 
 const EXTRACT_PROMPT = `These are screenshots of a Canadian shopper's loyalty-app offers page (PC Optimum, Scene+ or Save-On More Rewards). Extract every offer tied to a product or product category.
 
@@ -811,7 +837,9 @@ For each offer:
 - details: the offer's condition in a few words, e.g. "2,000 pts when you buy 2".
 - onlyAt: if the offer says it is only valid at one banner (e.g. "Shoppers Drug Mart", "No Frills", "Safeway"), that store name; otherwise "" (valid at every store in the program).
 
-Skip offers not tied to products (e.g. "earn points on fuel", "spend $250 anywhere"). Screenshots may be slices of one long page that overlap; list each offer only once.`;
+Skip offers not tied to products (e.g. "earn points on fuel", "spend $250 anywhere"). Screenshots may be slices of one long page that overlap; list each offer only once.
+
+Some screenshots may instead be from the Checkout 51 app. Put those in "checkout51", not "offers": for each Checkout 51 offer shown, its name exactly as written, its cash back amount, and its claim limit ("Claim up to 5 times" means 5; use 1 if not shown). If there are no Checkout 51 screenshots, return an empty "checkout51" list.`;
 
 // Phone screenshots are tall; send slices Claude can read comfortably.
 async function imageSlices(file) {
@@ -870,14 +898,29 @@ async function askClaude(files, prompt, schema, status, noun) {
 async function readScreenshots(files) {
   const status = $("#shot-status");
   try {
-    const found = (await askClaude(files, EXTRACT_PROMPT, OFFER_SCHEMA, status, "screenshots")).offers;
+    const result = await askClaude(files, EXTRACT_PROMPT, OFFER_SCHEMA, status, "screenshots");
+    const found = result.offers;
+    let c51Updated = 0;
+    for (const c of result.checkout51 || []) {
+      const same = (o) => productMatches(c.name, o.name) && productMatches(o.name, c.name);
+      for (const o of data.offers.filter(same)) {
+        if (c.cashback > 0 && Math.abs(c.cashback - o.cashback) < 50) c51Cash[o.id] = c.cashback;
+        if (c.claimLimit >= 1) c51Limits[o.id] = Math.min(20, c.claimLimit);
+        c51Updated++;
+      }
+    }
+    save("c51Cash", c51Cash);
+    save("c51Limits", c51Limits);
     const key = (x) => `${x.program}|${x.product.toLowerCase()}|${x.points}|${x.dollarsOff}`;
     const existing = new Set(myOffers.map(key));
     const fresh = found.filter((x) => !existing.has(key(x)))
       .map((x) => ({ ...x, id: crypto.randomUUID(), added: new Date().toISOString() }));
     myOffers = [...fresh, ...myOffers];
     save("myOffers", myOffers);
-    status.textContent = `Added ${fresh.length} offer${fresh.length === 1 ? "" : "s"}${found.length > fresh.length ? ` (${found.length - fresh.length} already saved)` : ""}.`;
+    status.textContent = [
+      found.length || !c51Updated ? `Added ${fresh.length} offer${fresh.length === 1 ? "" : "s"}${found.length > fresh.length ? ` (${found.length - fresh.length} already saved)` : ""}.` : "",
+      c51Updated ? `Updated ${c51Updated} Checkout 51 offer${c51Updated === 1 ? "" : "s"} with your cashback and claim limit.` : "",
+    ].filter(Boolean).join(" ");
     renderMine();
   } catch (err) {
     status.textContent = `Couldn't read screenshots: ${err.message}`;
@@ -1161,6 +1204,13 @@ function wire() {
   document.body.addEventListener("click", (e) => {
     const open = e.target.closest("[data-open]");
     if (open) location.hash = open.dataset.open.split("/").map(encodeURIComponent).join("/");
+    const cash = e.target.closest("[data-cash]");
+    if (cash) {
+      c51Cash[cash.dataset.offerId] = +cash.dataset.cash;
+      save("c51Cash", c51Cash);
+      routeResult = null;
+      route();
+    }
     const limit = e.target.closest("[data-limit]");
     if (limit) {
       const id = limit.dataset.offerId;
