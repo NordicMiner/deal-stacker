@@ -3,7 +3,7 @@
 
 const FLIPP_SEARCH = "https://backflipp.wishabi.com/flipp/items/search?locale=en-ca";
 const CLAUDE_MODEL = "claude-opus-5";
-const DEFAULT_RATES = { "PC Optimum": 1, "Scene+": 10, "More Rewards": 1, "Be Well": 1 }; // $ per 1,000 pts
+const DEFAULT_RATES = { "PC Optimum": 1, "Scene+": 10, "More Rewards": 1.5, "Be Well": 1 }; // $ per 1,000 pts
 const DEFAULT_STORES = [
   "Walmart", "Real Canadian Superstore", "No Frills", "Save-On-Foods", "Safeway",
   "Sobeys", "Costco", "Shoppers Drug Mart", "Your Independent Grocer",
