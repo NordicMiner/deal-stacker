@@ -967,7 +967,7 @@ const RECEIPT_SCHEMA = {
   additionalProperties: false,
 };
 
-const RECEIPT_PROMPT = `These are photos of Canadian store receipts or shelf price tags. There may be several receipts or tags.
+const RECEIPT_PROMPT = `These are photos of Canadian store receipts or shelf price tags, or screenshots of a purchase/order history page from a store's app (e.g. Walmart app purchase history). There may be several receipts or tags, and screenshots may be overlapping slices of one long list - list each item once.
 
 For each receipt or tag:
 - store: the store it is from.
