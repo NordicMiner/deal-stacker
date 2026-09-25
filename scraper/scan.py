@@ -28,10 +28,10 @@ STOPWORDS = {
 }
 
 
-def fetch(url: str, retries: int = 3) -> str:
+def fetch(url: str, retries: int = 3, headers: dict | None = None) -> str:
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers=UA)
+            req = urllib.request.Request(url, headers={**UA, **(headers or {})})
             with urllib.request.urlopen(req, timeout=30) as r:
                 return r.read().decode("utf-8", "ignore")
         except Exception:
@@ -58,7 +58,9 @@ OFFER_RE = re.compile(
 
 
 def scan_checkout51() -> list[dict]:
-    page = fetch(C51_URL)
+    # Checkout 51 picks the country from the visitor's IP; the nightly job runs
+    # on US servers, so ask for the Canadian offers explicitly.
+    page = fetch(C51_URL, headers={"Cookie": "c51_production_country=CA"})
     offers, by_key = [], {}
     for m in OFFER_RE.finditer(page):
         name = html.unescape(m["name"]).strip()
