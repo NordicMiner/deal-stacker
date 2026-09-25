@@ -113,41 +113,96 @@ function resolveItem(kind, key) {
 
 // ---------- stacking ----------
 
-// Per-item cost breakdown for one store's price.
-function stack(match, c51) {
-  const layers = [];
+let c51Limits = load("c51Limits", {}); // offer id -> times Checkout 51 lets her claim it
+const claimLimit = (c51) => Math.max(1, c51Limits[c51.id] || 1);
+
+// Everything she gets back for buying n of one item at one store.
+function haul(match, c51, n) {
   const price = match.price;
+  const program = match.program || programFor(match.merchant);
+  const spend = price * n;
+  const layers = [];
+  const needs = []; // what a bigger haul would unlock
   if (match.storeCoupon) layers.push({ label: "Store digital coupon", amount: match.storeCoupon });
 
-  const program = match.program || programFor(match.merchant);
   if (match.points) {
-    const units = match.pointsSpend && price ? Math.ceil(match.pointsSpend / price) : (match.pointsBuy || 1);
-    const pts = match.points / units;
-    const cond = match.pointsSpend ? `spend $${match.pointsSpend}` : units > 1 ? `buy ${units}` : "";
-    layers.push({
-      label: `${Math.round(pts).toLocaleString()} ${program || ""} pts${cond ? ` (${cond})` : ""}`,
-      amount: pointValue(pts, program), later: true,
-    });
+    const b = match.pointsBuy || 1;
+    let times, cond;
+    if (match.pointsSpend) {
+      times = match.pointsRepeat ? Math.floor(spend / match.pointsSpend + 1e-9) : (spend >= match.pointsSpend - 1e-9 ? 1 : 0);
+      cond = `${match.pointsRepeat ? "every" : "spend"} $${match.pointsSpend}`;
+      if (!times) needs.push(Math.ceil(match.pointsSpend / price - 1e-9));
+    } else if (b > 1) {
+      times = match.pointsRepeat ? Math.floor(n / b) : (n >= b ? 1 : 0);
+      cond = `buy ${b}`;
+      if (!times) needs.push(b);
+    } else {
+      times = n; // points on each item
+      cond = n > 1 ? `${n} × ${match.points.toLocaleString()}` : "";
+    }
+    if (times) {
+      const pts = match.points * times;
+      layers.push({ label: `${pts.toLocaleString()} ${program || ""} pts${cond ? ` (${cond})` : ""}`,
+        amount: pointValue(pts, program), later: true });
+    }
   }
 
   for (const mine of myOffers) {
     if (mine.program !== program || !productMatches(mine.product, match.name)) continue;
     if (mine.onlyAt && !match.merchant.toLowerCase().includes(mine.onlyAt.toLowerCase().replace(/^real canadian /, ""))) continue;
-    const qty = Math.max(1, mine.minQty || 1);
-    if (mine.dollarsOff) layers.push({ label: `My ${program}: ${mine.details || "$ off"}`, amount: mine.dollarsOff / qty, mine: true });
-    if (mine.points) layers.push({ label: `My ${program}: ${mine.points.toLocaleString()} pts${qty > 1 ? ` (buy ${qty})` : ""}`, amount: pointValue(mine.points / qty, program), later: true, mine: true });
+    const q = Math.max(1, mine.minQty || 1, mine.spendMin ? Math.ceil(mine.spendMin / price - 1e-9) : 1);
+    if (n < q) { needs.push(q); continue; }
+    if (mine.dollarsOff) layers.push({ label: `My ${program}: ${mine.details || "$ off"}`, amount: mine.dollarsOff, mine: true });
+    if (mine.points) layers.push({ label: `My ${program}: ${mine.points.toLocaleString()} pts${mine.details ? ` (${mine.details})` : ""}`,
+      amount: pointValue(mine.points, program), later: true, mine: true });
   }
 
   if (c51) {
-    const per = c51.cashback / (c51.qty || 1);
-    const range = c51.cashbackMin && c51.cashbackMin !== c51.cashback ? " (up to)" : "";
-    layers.push({ label: `Checkout 51${c51.qty > 1 ? ` (buy ${c51.qty})` : ""}${range}`, amount: per, later: true, c51: true });
+    const per = c51.qty || 1, limit = claimLimit(c51);
+    const claims = Math.min(Math.floor(n / per), limit);
+    const range = c51.cashbackMin && c51.cashbackMin !== c51.cashback ? ", up to" : "";
+    if (claims) layers.push({ label: `Checkout 51 (${claims > 1 ? `${claims} × ` : ""}${money(c51.cashback)}${per > 1 ? ` per ${per}` : ""}${range})`,
+      amount: claims * c51.cashback, later: true, c51: true });
+    if (claims < limit) needs.push(per * limit);
   }
 
-  const saved = layers.reduce((s, l) => s + l.amount, 0);
-  const final = price == null ? null : Math.max(0, price - saved);
+  const back = layers.reduce((t, l) => t + l.amount, 0);
+  return { n, spend, back, net: spend - back, each: (spend - back) / n, layers, needs };
+}
+
+// Best quantity to buy at one store, with the stack for that haul.
+function stack(match, c51) {
+  const price = match.price;
   const regular = match.wasPrice && price != null && match.wasPrice > price ? match.wasPrice : price;
-  return { layers, saved, final, regular, stacked: layers.length, hasMine: layers.some((l) => l.mine) };
+  if (price == null || price <= 0) {
+    const layers = [
+      ...(match.storeCoupon ? [{ label: "Store digital coupon", amount: match.storeCoupon }] : []),
+      ...(c51 ? [{ label: "Checkout 51", amount: c51.cashback, later: true, c51: true }] : []),
+    ];
+    return { layers, n: 1, final: null, net: null, regular, stacked: layers.length, hasMine: false, alts: [] };
+  }
+  const one = haul(match, c51, 1);
+  const maxN = Math.min(24, Math.max(1, ...one.needs));
+  let best = one;
+  const tried = [one];
+  for (let n = 2; n <= maxN; n++) {
+    const h = haul(match, c51, n);
+    tried.push(h);
+    if (h.each < best.each - 0.005) best = h;
+  }
+  // Bigger hauls that unlock something more, for the "or buy N" hint.
+  const alts = [...new Set(tried.flatMap((h) => h.needs))].filter((n) => n > best.n && n <= 24)
+    .map((n) => haul(match, c51, n))
+    .filter((h) => h.back - best.back >= 0.25 * (h.spend - best.spend)) // extra spend earns ≥ 25% back
+    .slice(0, 2);
+  return { ...best, final: best.each, regular, stacked: best.layers.length,
+    hasMine: best.layers.some((l) => l.mine), alts };
+}
+
+// "$3.10", "FREE" or "+$1.25 profit"
+function netText(net) {
+  if (Math.abs(net) < 0.005) return "FREE";
+  return net < 0 ? `+${money(-net)} profit` : money(net);
 }
 
 // No Frills (and any other configured store) matches competitors' flyer prices.
@@ -210,7 +265,13 @@ function rankHtml(m, s, isBest) {
     : `<tr><td>Price</td><td>not listed</td></tr>`;
   const rows = s.layers.map((l) => `<tr><td>${esc(l.label)}${l.later ? `<span class="later">back after purchase</span>` : ""}</td>
     <td class="minus">−${money(l.amount)}</td></tr>`).join("");
-  const total = s.final != null ? `<tr class="total"><td>Final cost per item</td><td>${money(s.final)}</td></tr>` : "";
+  const buyRow = s.n > 1 ? `<tr><td>Buy ${s.n} × ${money(m.price)}</td><td>${money(s.spend)}</td></tr>` : "";
+  const total = s.final == null ? "" : s.n > 1
+    ? `<tr class="total"><td>Final cost for ${s.n}</td><td>${netText(s.net)}</td></tr>
+       <tr><td>Per item</td><td>${netText(s.final)}</td></tr>`
+    : `<tr class="total"><td>Final cost</td><td>${netText(s.final)}</td></tr>`;
+  const altNotes = (s.alts || []).map((h) => `Or buy ${h.n}: ${netText(h.net)} total (${netText(h.each)} each), adds ${
+    h.layers.filter((l) => !s.layers.some((x) => x.label === l.label)).map((l) => esc(l.label)).join(" + ") || "more back"}.`);
   const ends = m.validTo ? `${m.source === "shelf" ? "Deal" : "Flyer"} ends ${shortDate(m.validTo)}` : "";
   const notes = [
     m.source === "pricematch" ? `Show the ${esc(m.priceMatchFrom)} flyer at the till. It must be the same item and size.` : "",
@@ -221,9 +282,10 @@ function rankHtml(m, s, isBest) {
   ].filter(Boolean).map((n) => `<div class="note">${n}</div>`).join("");
   return `<li class="rank${isBest ? " best" : ""}">
     <div class="rank-top"><span class="rank-store">${esc(m.merchant)}${m.source === "pricematch" ? ` <span class="badge green">price match</span>` : ""}</span>
-      ${s.final != null ? `<span class="big">${money(s.final)}</span>` : ""}</div>
+      ${s.final != null ? `<span class="big">${s.n > 1 ? `<span class="qty">buy ${s.n}</span> ` : ""}${netText(s.final)}</span>` : ""}</div>
     <div class="rank-item">${esc(m.name)}</div>
-    <table class="stack">${priceRow}${rows}${total}</table>
+    <table class="stack">${priceRow}${buyRow}${rows}${total}</table>
+    ${altNotes.map((n) => `<div class="note tip">💡 ${n}</div>`).join("")}
     ${notes}
     ${m.link ? `<div class="note"><a href="${esc(m.link)}" target="_blank" rel="noopener">View at store ↗</a></div>` : ""}
   </li>`;
@@ -243,7 +305,7 @@ function cardHtml(item, rows, attrs) {
   let right = cash ? `<div class="cash">${cash}</div>` : "";
   let sub = esc(item.desc || "");
   if (best && best.s.final != null) {
-    right = `<div class="big">${money(best.s.final)}</div><div class="sub">at ${esc(short(best.m.merchant))}</div>`;
+    right = `<div class="big">${netText(best.s.final)}</div><div class="sub">${best.s.n > 1 ? `each, buy ${best.s.n} ` : ""}at ${esc(short(best.m.merchant))}</div>`;
     const sale = rows.some((r) => isSale(r.m));
     sub = [cash, `${rows.length} store${rows.length > 1 ? "s" : ""}`].filter(Boolean).join(" · ") + " "
       + (sale ? `<span class="badge">on sale</span> ` : "")
@@ -301,6 +363,10 @@ function showDetail(kind, key) {
     <div class="detail-head">${item.image ? `<img src="${esc(item.image)}" alt="">` : `<div class="thumb"></div>`}
       <div><h2>${esc(item.title)}</h2>
       ${item.c51 ? `<div class="cash">${cashText(item.c51)} back with Checkout 51</div>` : ""}</div></div>
+    ${item.c51 ? `<div class="limit"><span>Checkout 51 lets me claim it</span>
+      <button class="button small" data-limit="-1" data-offer-id="${esc(item.c51.id)}" aria-label="Fewer">−</button>
+      <strong>${claimLimit(item.c51)}×</strong>
+      <button class="button small" data-limit="1" data-offer-id="${esc(item.c51.id)}" aria-label="More">＋</button></div>` : ""}
     ${item.desc ? `<p class="muted">${esc(item.desc)}</p>` : ""}
     <div class="links">
       <button class="button small ${inList ? "" : "primary"}" data-toggle-list="${esc(kind)}|${esc(key)}">${inList ? "✓ On your list" : "＋ Add to list"}</button>
@@ -401,7 +467,7 @@ function planTrip(entries) {
   const evaluate = (set) => {
     let covered = 0, cost = 0;
     for (const e of priced) {
-      const finals = set.filter((s) => e.options.has(s)).map((s) => e.options.get(s).s.final);
+      const finals = set.filter((s) => e.options.has(s)).map((s) => e.options.get(s).s.net);
       if (finals.length) { covered++; cost += Math.min(...finals); }
     }
     return { set, covered, cost };
@@ -411,7 +477,7 @@ function planTrip(entries) {
   const pairs = [];
   for (let i = 0; i < stores.length; i++) for (let j = i + 1; j < stores.length; j++) pairs.push(evaluate([stores[i], stores[j]]));
   pairs.sort(better);
-  const everyBest = evaluate([...new Set(priced.map((e) => [...e.options.values()].sort((a, b) => a.s.final - b.s.final)[0].m.merchant))]);
+  const everyBest = evaluate([...new Set(priced.map((e) => [...e.options.values()].sort((a, b) => a.s.net - b.s.net)[0].m.merchant))]);
 
   const plans = [];
   if (singles[0]) plans.push({ ...singles[0], label: "One store" });
@@ -438,8 +504,8 @@ function renderTrip() {
     let group = "Any store", row = null;
     if (!e.item) group = "No longer available";
     else if (plan && e.options.size) {
-      const inPlan = plan.set.filter((s) => e.options.has(s)).map((s) => e.options.get(s)).sort((a, b) => a.s.final - b.s.final)[0];
-      row = inPlan || [...e.options.values()].sort((a, b) => a.s.final - b.s.final)[0];
+      const inPlan = plan.set.filter((s) => e.options.has(s)).map((s) => e.options.get(s)).sort((a, b) => a.s.net - b.s.net)[0];
+      row = inPlan || [...e.options.values()].sort((a, b) => a.s.net - b.s.net)[0];
       group = inPlan ? row.m.merchant : "Not on this trip";
     }
     if (!groups.has(group)) groups.set(group, []);
@@ -464,7 +530,7 @@ function renderTrip() {
         <span><span class="name">${esc(e.item?.title || e.t.key)}</span>
         <span class="sub">${e.row ? `${store === "Not on this trip" ? `${esc(short(e.row.m.merchant))} · ` : ""}${esc(e.row.m.name)}` : ""}</span>
         ${e.row?.m.source === "pricematch" ? `<span class="sub">Price match: bring the ${esc(e.row.m.priceMatchFrom)} flyer</span>` : ""}</span></label>
-      <span class="right">${e.row ? `<span class="big">${money(e.row.s.final)}</span>` : ""}
+      <span class="right">${e.row ? `<span class="big">${e.row.s.n > 1 ? `<span class="qty">×${e.row.s.n}</span> ` : ""}${netText(e.row.s.net)}</span>` : ""}
         <button class="remove" data-unlist="${esc(e.t.kind)}|${esc(e.t.key)}" aria-label="Remove">×</button></span>
     </li>`).join("")}</ul></div>`).join("");
 
@@ -571,8 +637,8 @@ async function planRoute(fromHere) {
     // Stores worth visiting: cheapest (or within 50¢ of cheapest) for at least one item.
     const useful = new Map();
     for (const e of entries) {
-      const best = Math.min(...[...e.options.values()].map((r) => r.s.final));
-      for (const [merchant, r] of e.options) if (r.s.final <= best + 0.5) useful.set(merchant, (useful.get(merchant) || 0) + 1);
+      const best = Math.min(...[...e.options.values()].map((r) => r.s.net));
+      for (const [merchant, r] of e.options) if (r.s.net <= best + 0.5) useful.set(merchant, (useful.get(merchant) || 0) + 1);
     }
     const merchants = [...useful.entries()].sort((a, b) => b[1] - a[1]).map(([m]) => m)
       .filter((m) => branches.some((b) => b.merchant === m)).slice(0, 8);
@@ -594,7 +660,7 @@ async function planRoute(fromHere) {
       for (const set of combinations(merchants, k)) {
         let covered = 0, groceries = 0;
         for (const e of entries) {
-          const finals = set.filter((m) => e.options.has(m)).map((m) => e.options.get(m).s.final);
+          const finals = set.filter((m) => e.options.has(m)).map((m) => e.options.get(m).s.net);
           if (finals.length) { covered++; groceries += Math.min(...finals); }
         }
         let route = null;
@@ -1095,6 +1161,14 @@ function wire() {
   document.body.addEventListener("click", (e) => {
     const open = e.target.closest("[data-open]");
     if (open) location.hash = open.dataset.open.split("/").map(encodeURIComponent).join("/");
+    const limit = e.target.closest("[data-limit]");
+    if (limit) {
+      const id = limit.dataset.offerId;
+      c51Limits[id] = Math.min(20, Math.max(1, (c51Limits[id] || 1) + +limit.dataset.limit));
+      save("c51Limits", c51Limits);
+      routeResult = null;
+      route();
+    }
     const toggle = e.target.closest("[data-toggle-list]");
     if (toggle) {
       const [kind, ...key] = toggle.dataset.toggleList.split("|");

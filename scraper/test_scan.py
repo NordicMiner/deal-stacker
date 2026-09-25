@@ -28,6 +28,14 @@ class Matching(unittest.TestCase):
         self.assertTrue(sources.relevant("St. Ives Body Wash, Hand & Body Lotion or Face Scrub", "St. Ives - Skin Renewing Body Lotion"))
         self.assertFalse(sources.relevant("Select Cascades Fluff & Tuff Products", "Cascade Platinum Plus Dishwasher Pods"))
 
+    def test_points_terms(self):
+        self.assertEqual(sources.points_terms("Get 5000 PC Optimum bonus points for every $24.97 spent on participating products"),
+                         {"pointsBuy": 1, "pointsSpend": 24.97, "pointsRepeat": True})
+        self.assertEqual(sources.points_terms("500 Scene+ PTS when you buy 2"),
+                         {"pointsBuy": 2, "pointsSpend": None, "pointsRepeat": False})
+        self.assertEqual(sources.points_terms("earn 1500 More REWARDS pts when you spend $15 or more on Kashi Cereal."),
+                         {"pointsBuy": 1, "pointsSpend": 15.0, "pointsRepeat": False})
+
     def test_sizes_normalise_units(self):
         self.assertEqual(sources.sizes("1.5 L and 2 kg, 40 ea"), {(1500.0, "ml"), (2000.0, "g"), (40.0, "ct")})
 

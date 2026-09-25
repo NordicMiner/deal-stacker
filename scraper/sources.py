@@ -158,6 +158,18 @@ SPEND_RE = re.compile(r"spend \$(\d+(?:\.\d+)?)", re.I)
 STORE_COUPON_RE = re.compile(r"save \$(\d+(?:\.\d+)?) with (?:digital |in-store |store )?coupon", re.I)
 
 
+def points_terms(text: str) -> dict:
+    """What a points offer needs: "when you buy 2", "for every $24.97 spent", ..."""
+    text = text or ""
+    buy = BUY_RE.search(text)
+    spend = re.search(r"(?:spend|every)\s+\$(\d+(?:\.\d+)?)", text, re.I) or SPEND_RE.search(text)
+    return {
+        "pointsBuy": int(buy[1]) if buy else 1,
+        "pointsSpend": float(spend[1]) if spend else None,
+        "pointsRepeat": bool(re.search(r"\b(every|each)\b", text, re.I)),
+    }
+
+
 def program_for(config: dict, merchant: str) -> str | None:
     for program, merchants in config["loyalty_programs"].items():
         if merchant in merchants:
@@ -176,8 +188,7 @@ def parse_flyer_item(config: dict, item: dict) -> dict | None:
     multi = re.match(r"(\d+)\s*/", pre)  # "2/" $5 -> $2.50 each
     unit_price = price / int(multi[1]) if (multi and price is not None) else price
     pts = POINTS_RE.search(story)
-    buy = BUY_RE.search(story)
-    spend = SPEND_RE.search(story)
+    terms = points_terms(story) if pts else {"pointsBuy": 1, "pointsSpend": None, "pointsRepeat": False}
     img = item.get("clean_image_url") or item.get("clipping_image_url") or ""
     return {
         "source": "flyer",
@@ -189,8 +200,7 @@ def parse_flyer_item(config: dict, item: dict) -> dict | None:
         "perWeight": bool(re.search(r"/\s*(lb|kg|100\s*g)", post, re.I)),
         "saleStory": story or None,
         "points": int(pts[1].replace(",", "")) if pts else 0,
-        "pointsBuy": int(buy[1]) if (pts and buy) else 1,
-        "pointsSpend": float(spend[1]) if (pts and spend) else None,
+        **terms,
         "program": program_for(config, item["merchant_name"]),
         "validTo": item.get("valid_to"),
         "image": img.replace("http://", "https://"),
@@ -253,6 +263,10 @@ def _pcx_search(store: dict, query: str) -> list[dict]:
             points = int(str(points).replace(",", "")) if points else 0
         except ValueError:
             points = 0
+        # The badge only says "PC Optimum Offer"; the promotion text has the rule,
+        # e.g. "Get 5000 PC Optimum bonus points for every $24.97 spent".
+        promo = next((p.get("text") for p in (r.get("promotions") or [])
+                      if p.get("type") == "LOYALTY" and p.get("text")), "")
         name = f"{r.get('brand') or ''} {r.get('name') or ''}".strip()
         size = r.get("packageSize") or ""
         img = next((a.get("smallUrl") or a.get("mediumUrl") for a in (r.get("imageAssets") or []) if a), "")
@@ -265,10 +279,9 @@ def _pcx_search(store: dict, query: str) -> list[dict]:
             "wasPrice": round(was, 2) if was else None,
             "perWeight": unit != "ea",
             "storeCoupon": 0,
-            "saleStory": (loyalty.get("text") or deal.get("text") or None),
+            "saleStory": (promo or loyalty.get("text") or deal.get("text") or None),
             "points": points,
-            "pointsBuy": 1,
-            "pointsSpend": None,
+            **points_terms(promo),
             "program": "PC Optimum",
             "validTo": deal.get("expiryDate") or loyalty.get("expiryDate"),
             "image": img,
