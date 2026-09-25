@@ -45,6 +45,7 @@
           <input id="watch-input" type="search" placeholder="e.g. Tide Pods, Nescafé coffee" autocomplete="off" enterkeyhint="done">
           <button class="button primary" type="submit">Add</button>
         </form>
+        <div class="links"><button id="sync-now" class="button small" type="button">Sync now</button></div>
         <p id="watch-status" class="status" role="status"></p>
       </div>
       <ul id="watch-list" class="cards"></ul>
@@ -122,6 +123,8 @@
         <h2>GitHub token</h2>
         <p class="muted">Lets the watchlist sync to the nightly scan so you get store prices and alerts for it. It stays on this phone.</p>
         <input id="github-token" type="password" placeholder="github_pat_…" autocomplete="off">
+        <div class="links"><button id="check-token" class="button small" type="button">Check connection</button></div>
+        <p id="token-status" class="status" role="status"></p>
       </div>
       <div class="panel">
         <h2>Data</h2>

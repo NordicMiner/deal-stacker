@@ -437,6 +437,25 @@ async function syncWatchlist(note) {
   }
 }
 
+async function checkToken() {
+  const out = $("#token-status");
+  if (!settings.githubToken) { out.textContent = "No token saved yet."; return; }
+  out.textContent = "Checking…";
+  try {
+    const res = await fetch(`https://api.github.com/repos/${data.repo}`, {
+      headers: { Authorization: `Bearer ${settings.githubToken}`, Accept: "application/vnd.github+json" }, cache: "no-store" });
+    if (res.status === 401) throw new Error("GitHub doesn't recognise this token - it may be mistyped or expired");
+    if (res.status === 404) throw new Error(`this token can't see ${data.repo} - check "Repository access" includes deal-stacker`);
+    if (!res.ok) throw new Error(`GitHub said ${res.status}`);
+    const repo = await res.json();
+    if (!repo.permissions?.push) throw new Error('the token is read-only - set "Contents" to "Read and write"');
+    out.textContent = "✓ Connected. Your watchlist will sync.";
+    if (currentWatchTerms().length) syncWatchlist("sync from phone");
+  } catch (err) {
+    out.textContent = `✗ Not connected: ${err.message}.`;
+  }
+}
+
 async function liveSearch(term) {
   const url = `${FLIPP_SEARCH}&postal_code=${encodeURIComponent(data.postalCode || "T8N3K8")}&q=${encodeURIComponent(term)}`;
   const json = await (await fetch(url)).json();
@@ -1367,8 +1386,10 @@ function wire() {
   $("#github-token").addEventListener("change", (e) => {
     settings.githubToken = e.target.value.trim();
     save("settings", settings);
-    if (settings.githubToken && currentWatchTerms().length) syncWatchlist("sync from phone");
+    checkToken();
   });
+  $("#check-token").addEventListener("click", checkToken);
+  $("#sync-now").addEventListener("click", () => syncWatchlist("sync from phone"));
 }
 
 async function init() {
