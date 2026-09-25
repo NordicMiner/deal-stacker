@@ -970,12 +970,12 @@ const RECEIPT_SCHEMA = {
 const RECEIPT_PROMPT = `These are photos of Canadian store receipts or shelf price tags, or screenshots of a purchase/order history page from a store's app (e.g. Walmart app purchase history). There may be several receipts or tags, and screenshots may be overlapping slices of one long list - list each item once.
 
 For each receipt or tag:
-- store: the store it is from.
+- store: the store it is from. Walmart app screens (blue header, "Return eligible until…", "Write a review") are Walmart even if the name isn't printed.
 - date: YYYY-MM-DD if shown, otherwise "".
 - items: every product line, with:
   - name: the full product name with brand and size, expanding receipt abbreviations (e.g. "GV 2% MLK 4L" -> "Great Value 2% Milk 4 L"). If you can't tell what an abbreviation means, keep the words you can read.
-  - price: the price for ONE item before tax, after any instant discount printed on the receipt or tag.
-  - regularPrice: the regular price if the receipt or tag shows one (e.g. "was $5.99" or a discount line), otherwise 0.
+  - price: the price for ONE item before tax, after any instant discount printed on the receipt or tag. If a line shows a quantity and a line total (e.g. "Qty 5  $45.60"), divide the total by the quantity ($9.12).
+  - regularPrice: the regular price for ONE item if shown (e.g. "was $5.99", a crossed-out price, or a discount line), otherwise 0. Divide crossed-out line totals by the quantity too.
   - perWeight: true for items sold by weight (produce, meat), otherwise false.
 
 Skip deposits, eco fees, bags, tax, subtotals, totals, payment and loyalty lines.`;
